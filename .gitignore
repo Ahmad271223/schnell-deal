@@ -20,3 +20,13 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Fremde Umgebungen (Emergent-Preview) und lokale Laufzeitdaten gehören nicht ins Repository
+.pgdata/
+.storage/
+.bin/
+.emergent/
+memory/
+test_reports/
+.gitconfig
+*.tsbuildinfo
