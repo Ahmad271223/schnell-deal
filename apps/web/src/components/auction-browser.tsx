@@ -378,7 +378,7 @@ function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionC
             <p className="text-[11px] text-slate-500">{card.bidCount} Gebot(e)</p>
           </div>
         </div>
-        <LinkButton href={href} className="mt-3 w-full" icon={<Gavel className="h-4 w-4" />}>
+        <LinkButton href={href} className="mt-3 w-full" icon={<Gavel className="h-4 w-4" />} testId={`bid-cta-${card.number}`}>
           Jetzt bieten
         </LinkButton>
       </div>

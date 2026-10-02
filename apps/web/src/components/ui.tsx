@@ -72,10 +72,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
-export function LinkButton({ href, variant = 'primary', size = 'md', className, children, icon }: { href: string; variant?: Variant; size?: ButtonProps['size']; className?: string; children: ReactNode; icon?: ReactNode }) {
+export function LinkButton({ href, variant = 'primary', size = 'md', className, children, icon, testId }: { href: string; variant?: Variant; size?: ButtonProps['size']; className?: string; children: ReactNode; icon?: ReactNode; testId?: string }) {
   return (
     <Link
       href={href}
+      data-testid={testId}
       className={clsx(
         'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors',
         size === 'sm' && 'h-8 px-3 text-sm',
