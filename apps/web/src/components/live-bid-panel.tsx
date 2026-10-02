@@ -179,7 +179,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
         <div className="grid grid-cols-3 px-[18px] pt-5 text-center">
           <div key={flash} className={clsx('rounded-md py-1', flash > 0 && 'flash-dark')}>
             <p className="text-[13px] text-slate-300">{s.currentBid !== null ? 'Aktuelles Gebot' : 'Startpreis'}</p>
-            <p className="tabular mt-1 text-[22px] font-bold @sm:text-[26px]" aria-live="polite">
+            <p className="tabular mt-1 text-[22px] font-bold @sm:text-[26px]" aria-live="polite" data-testid="current-bid">
               {formatEuro(s.currentBid ?? s.startPrice, { whole: true })}
             </p>
           </div>
@@ -189,7 +189,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
           </div>
           <div className="py-1">
             <p className="text-[13px] text-slate-300">Nächstes Gebot</p>
-            <p className="tabular mt-1.5 text-[19px] font-bold @sm:text-[22px]">{formatEuro(s.minNextBid, { whole: true })}</p>
+            <p className="tabular mt-1.5 text-[19px] font-bold @sm:text-[22px]" data-testid="next-bid">{formatEuro(s.minNextBid, { whole: true })}</p>
           </div>
         </div>
 
@@ -200,7 +200,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
           <span>Mindestgebot: {formatEuro(s.minNextBid, { whole: true })}</span>
           {s.buyNowPrice !== null &&
             (active && canBid ? (
-              <button type="button" onClick={() => request({ kind: 'BUY_NOW', amount: s.buyNowPrice! })} className="underline-offset-2 hover:underline">
+              <button type="button" onClick={() => request({ kind: 'BUY_NOW', amount: s.buyNowPrice! })} data-testid="buy-now-button" className="underline-offset-2 hover:underline">
                 Sofortkauf: {formatEuro(s.buyNowPrice, { whole: true })}
               </button>
             ) : (
@@ -221,6 +221,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
                 type="button"
                 onClick={() => request({ kind: 'BID', amount: s.minNextBid })}
                 disabled={s.me.status === 'LEADING' || busy}
+                data-testid="place-bid-button"
                 className="flex h-[54px] w-full items-center justify-center gap-3 rounded-md bg-[#e30613] text-[17px] font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-[#e30613]/45"
               >
                 <Gavel className="h-6 w-6" aria-hidden />
@@ -229,6 +230,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
               <button
                 type="button"
                 onClick={() => request({ kind: 'MAX', amount: Math.max(s.minNextBid, (s.me.maxBid ?? 0) + s.bidIncrement) })}
+                data-testid="max-bid-button"
                 className="flex h-[49px] w-full items-center justify-center gap-3 rounded-md bg-[#e9ecef] text-base font-medium text-slate-900 transition-colors hover:bg-white"
               >
                 <UserRoundCog className="h-5 w-5" aria-hidden /> Maximalgebot setzen
