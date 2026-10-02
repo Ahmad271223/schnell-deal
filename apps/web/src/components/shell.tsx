@@ -24,6 +24,7 @@ import {
   KeyRound,
   LayoutDashboard,
   ListChecks,
+  Loader2,
   LogOut,
   Map as MapIcon,
   Menu,
@@ -192,8 +193,35 @@ function ShellLayout({ area, me, children }: { area: Area; me: Me; children: Rea
 
       <div className="flex min-h-screen flex-col lg:pl-64">
         <Topbar area={area} me={me} onMenu={() => setOpen(true)} />
+        <ConnectionBanner />
         <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8">{children}</main>
       </div>
+    </div>
+  );
+}
+
+/** Dezenter „Verbinde erneut …“-Hinweis bei WebSocket-Unterbrechungen (kurze Karenz gegen Flackern). */
+function ConnectionBanner() {
+  const status = useRealtimeStatus();
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (status === 'online') {
+      setShow(false);
+      return;
+    }
+    const t = setTimeout(() => setShow(true), 2500);
+    return () => clearTimeout(t);
+  }, [status]);
+  if (!show) return null;
+  return (
+    <div
+      className="sticky top-16 z-20 flex items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-[13px] font-medium text-amber-800"
+      role="status"
+      aria-live="polite"
+      data-testid="connection-banner"
+    >
+      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+      Verbinde erneut … Live-Aktualisierung wird wiederhergestellt.
     </div>
   );
 }

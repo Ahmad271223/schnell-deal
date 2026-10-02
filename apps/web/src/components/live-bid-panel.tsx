@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Gavel, Info, UserRoundCog } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Gavel, Info, Trophy, UserRoundCog, Zap } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDateTimeDe, TAX_TYPE_LABELS } from '@sd/shared';
@@ -36,6 +36,7 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
   const history = useQuery({ queryKey: ['auction-bids', auctionId], queryFn: () => api<BidHistoryItem[]>(`/auctions/${auctionId}/bids`) });
   const s = state.data;
   const [flash, setFlash] = useState(0);
+  const [extendFlash, setExtendFlash] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [dialogAmount, setDialogAmount] = useState('');
@@ -52,6 +53,22 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
     const t = setTimeout(() => setResult(null), 6000);
     return () => clearTimeout(t);
   }, [result]);
+  // Verlängerungs-Hinweis (Sniping-Schutz) nach einigen Sekunden wieder ausblenden.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 9000);
+    return () => clearTimeout(t);
+  }, [notice]);
+  // Ausfallsicher: Läuft die Endzeit lokal ab, Status aktiv nachladen (falls das WS-„ended“-Event ausbleibt).
+  useEffect(() => {
+    if (s.status !== 'ACTIVE') return;
+    const end = new Date(s.endsAt).getTime();
+    const id = setInterval(() => {
+      if (realtime.now() >= end) void state.refetch();
+    }, 2000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.status, s.endsAt]);
 
   useChannel(`auction:${auctionId}`, (e) => {
     if (e.event === 'bid') {
@@ -76,7 +93,10 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
         };
       });
       setFlash((f) => f + 1);
-      if (d.extended) setNotice(`Auktion verlängert bis ${formatDateTimeDe(d.endsAt)} (Gebot in der Schlussphase).`);
+      if (d.extended) {
+        setNotice(`Auktion verlängert bis ${formatDateTimeDe(d.endsAt)} – ein Gebot fiel in die Schlussphase (Sniping-Schutz).`);
+        setExtendFlash((x) => x + 1);
+      }
       void qc.invalidateQueries({ queryKey: ['auction-bids', auctionId] });
     } else if (e.event === 'extended') {
       setNotice(`Endzeit geändert: ${formatDateTimeDe((e.data as { endsAt: string }).endsAt)}`);
@@ -169,10 +189,10 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
           <p className="text-[15px] text-slate-100">{active ? 'Auktion endet in' : s.status === 'SCHEDULED' ? 'Beginnt in' : `Ende: ${formatDateTimeDe(s.endsAt)}`}</p>
         </div>
 
-        <CountdownBoxes state={s} />
+        <CountdownBoxes state={s} extendFlash={extendFlash} />
         {notice && (
-          <p className="mx-4 mt-3 flex items-start gap-2 rounded-md bg-sky-500/15 px-3 py-2 text-xs text-sky-100" role="status">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /> {notice}
+          <p className="attention-pulse mx-4 mt-3 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-500/20 px-3 py-2.5 text-[13px] font-semibold text-amber-100 shadow-sm" role="status" data-testid="extend-notice">
+            <Zap className="mt-0.5 h-4 w-4 shrink-0 fill-amber-300 text-amber-300" aria-hidden /> {notice}
           </p>
         )}
 
@@ -209,7 +229,11 @@ export function LiveBidPanel({ auctionId, initial }: { auctionId: string; initia
         </div>
 
         <div className="space-y-3 px-4 pt-4">
-          {s.me.status !== 'NONE' && <StatusLine status={s.me.status} />}
+          {!active && s.status !== 'SCHEDULED' ? (
+            <FinalBanner status={s.status} meStatus={s.me.status} finalPrice={s.currentBid} />
+          ) : (
+            s.me.status !== 'NONE' && <StatusLine status={s.me.status} />
+          )}
           {active && !canBid && (
             <Alert tone="warning" title="Gebotsabgabe nicht möglich">
               {me.data?.company?.biddingStatus === 'VIEW_ONLY' ? 'Ihr Konto ist derzeit nur zur Ansicht freigeschaltet.' : 'Ihr Bieterkonto ist gesperrt.'}
@@ -328,7 +352,7 @@ function StatusLine({ status }: { status: DealerAuctionState['me']['status'] }) 
 }
 
 /** Restzeit in Kästchen auf Basis der Serverzeit (nie der Browseruhr allein). */
-function CountdownBoxes({ state: s }: { state: DealerAuctionState }) {
+function CountdownBoxes({ state: s, extendFlash }: { state: DealerAuctionState; extendFlash: number }) {
   const now = useServerNow(250);
   const box = 'mx-4 mt-4 rounded-md border border-white/5 bg-[#0a1422]';
   if (s.status !== 'ACTIVE' && s.status !== 'SCHEDULED') {
@@ -348,24 +372,79 @@ function CountdownBoxes({ state: s }: { state: DealerAuctionState }) {
     [total % 60, 'Sekunden'],
   ];
   const urgent = s.status === 'ACTIVE' && ms < 2 * 60_000;
+  const snipeMs = s.antiSnipeMinutes * 60_000;
+  const inSnipeWindow = s.status === 'ACTIVE' && s.antiSnipeMinutes > 0 && ms > 0 && ms <= snipeMs;
   return (
-    <div className={clsx(box, 'px-3 py-3')} role="timer" aria-live={urgent ? 'polite' : 'off'}>
-      <div className="flex items-start justify-center">
-        {parts.map(([value, label], i) => (
-          <Fragment key={label}>
-            {i > 0 && (
-              <span className="px-2 text-[32px] font-bold leading-none" aria-hidden>
-                :
-              </span>
-            )}
-            <div className="min-w-[4rem] text-center">
-              <div className={clsx('tabular text-[32px] font-bold leading-none', urgent && 'text-red-400')}>{String(value).padStart(2, '0')}</div>
-              <div className="mt-2 text-[13px] text-slate-200">{label}</div>
-            </div>
-          </Fragment>
-        ))}
+    <>
+      <div key={extendFlash} className={clsx(box, 'px-3 py-3', extendFlash > 0 && 'extend-flash')} role="timer" aria-live={urgent ? 'polite' : 'off'}>
+        <div className="flex items-start justify-center">
+          {parts.map(([value, label], i) => (
+            <Fragment key={label}>
+              {i > 0 && (
+                <span className="px-2 text-[32px] font-bold leading-none" aria-hidden>
+                  :
+                </span>
+              )}
+              <div className="min-w-[4rem] text-center">
+                <div className={clsx('tabular text-[32px] font-bold leading-none', urgent && 'text-red-400')}>{String(value).padStart(2, '0')}</div>
+                <div className="mt-2 text-[13px] text-slate-200">{label}</div>
+              </div>
+            </Fragment>
+          ))}
+        </div>
+        {urgent && <span className="sr-only">Auktion endet in Kürze</span>}
       </div>
-      {urgent && <span className="sr-only">Auktion endet in Kürze</span>}
+      {inSnipeWindow && (
+        <p className={clsx('mx-4 mt-2 flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px] font-semibold', urgent ? 'attention-pulse border-amber-400/50 bg-amber-500/20 text-amber-100' : 'border-amber-400/30 bg-amber-500/10 text-amber-200')} data-testid="snipe-window-hint">
+          <Zap className="h-3.5 w-3.5 shrink-0 fill-amber-300 text-amber-300" aria-hidden />
+          Verlängerungsschutz aktiv: Jedes Gebot jetzt verlängert die Auktion um {s.antiSnipeMinutes} Min.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Abschluss-Hinweis nach Auktionsende: Gewinner hervorheben, sonst „Beendet“. */
+function FinalBanner({ status, meStatus, finalPrice }: { status: DealerAuctionState['status']; meStatus: DealerAuctionState['me']['status']; finalPrice: number | null }) {
+  if (status === 'CANCELLED') {
+    return (
+      <div className="flex items-center gap-3 rounded-md bg-slate-700 px-4 py-3 text-white" role="status" data-testid="final-banner">
+        <Info className="h-5 w-5 shrink-0" aria-hidden />
+        <span className="font-semibold">Auktion abgebrochen</span>
+      </div>
+    );
+  }
+  if (meStatus === 'WON') {
+    return (
+      <div className="rise flex items-center gap-3 rounded-md bg-emerald-600 px-4 py-3.5 text-white shadow-md ring-2 ring-emerald-300/40" role="status" data-testid="final-banner">
+        <Trophy className="h-6 w-6 shrink-0" aria-hidden />
+        <div>
+          <p className="text-[15px] font-bold leading-tight">Zuschlag erhalten – Sie haben gewonnen!</p>
+          {finalPrice !== null && <p className="text-[13px] text-emerald-50">Höchstgebot {formatEuro(finalPrice, { whole: true })}. Die Kaufbestätigung finden Sie unter „Käufe“.</p>}
+        </div>
+      </div>
+    );
+  }
+  if (meStatus === 'RESERVE_NOT_MET') {
+    return (
+      <div className="flex items-center gap-3 rounded-md bg-amber-500 px-4 py-3 text-white" role="status" data-testid="final-banner">
+        <AlertTriangle className="h-5 w-5 shrink-0" aria-hidden />
+        <span className="font-semibold">Auktion beendet – Mindestpreis nicht erreicht. Entscheidung des Verkäufers ausstehend.</span>
+      </div>
+    );
+  }
+  if (meStatus === 'LOST') {
+    return (
+      <div className="flex items-center gap-3 rounded-md bg-slate-600 px-4 py-3 text-white" role="status" data-testid="final-banner">
+        <Info className="h-5 w-5 shrink-0" aria-hidden />
+        <span className="font-semibold">Auktion beendet – leider nicht gewonnen.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-md bg-slate-600 px-4 py-3 text-white" role="status" data-testid="final-banner">
+      <Info className="h-5 w-5 shrink-0" aria-hidden />
+      <span className="font-semibold">Auktion beendet.</span>
     </div>
   );
 }

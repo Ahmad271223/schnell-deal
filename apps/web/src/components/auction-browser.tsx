@@ -11,7 +11,7 @@ import { formatEuro, parseEuroInput, yearOf } from '@/lib/format';
 import { realtime, useChannel } from '@/lib/realtime';
 import type { AuctionCard } from '@/lib/types';
 import { Countdown } from './countdown';
-import { Button, EmptyState, ErrorAlert, Field, Input, LinkButton, Pagination, Select, Spinner } from './ui';
+import { Button, EmptyState, ErrorAlert, Field, Input, Pagination, Select, Spinner } from './ui';
 
 export type Preset = 'all' | 'ending' | 'new' | 'favorites';
 
@@ -281,7 +281,7 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
           {preset === 'favorites' ? 'Markieren Sie Fahrzeuge mit dem Herz, um sie hier zu beobachten.' : 'Passen Sie die Filter an oder schauen Sie später wieder vorbei.'}
         </EmptyState>
       )}
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {q.data?.items.map((c, i) => <LiveAuctionCard key={c.id} card={c} index={i} queryKey={key} onFavorite={() => toggleFavorite(c)} />)}
       </div>
       {q.data && (q.data.hasMore || page > 1) && <Pagination page={page} hasMore={q.data.hasMore} onChange={setPage} />}
@@ -300,6 +300,12 @@ function HeroStat({ value, label, accent }: { value: number | string; label: str
 
 function statusBadgeFor(card: AuctionCard): { label: string; cls: string; dot: string; live?: boolean } {
   if (card.status === 'SCHEDULED') return { label: 'Neu', cls: 'bg-blue-50 text-blue-700 ring-blue-200', dot: 'bg-blue-500' };
+  if (card.status === 'CANCELLED') return { label: 'Abgebrochen', cls: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-400' };
+  if (card.status === 'ENDED') {
+    return card.outcome === 'SOLD' || card.outcome === 'BUY_NOW'
+      ? { label: 'Verkauft', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' }
+      : { label: 'Beendet', cls: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-400' };
+  }
   const msLeft = new Date(card.endsAt).getTime() - Date.now();
   if (msLeft > 0 && msLeft < 3_600_000) return { label: 'Endet bald', cls: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' };
   return { label: 'LIVE', cls: 'bg-red-50 text-brand-700 ring-brand-200', dot: 'bg-brand-500', live: true };
@@ -318,10 +324,19 @@ function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionC
       );
       setFlash((f) => f + 1);
       void qc.invalidateQueries({ queryKey });
-    } else if (['started', 'ended', 'cancelled', 'extended'].includes(e.event)) {
+    } else if (['started', 'ended', 'cancelled', 'extended', 'resync'].includes(e.event)) {
       void qc.invalidateQueries({ queryKey });
     }
   });
+  // Ausfallsicher: Läuft die Endzeit lokal ab, ohne dass ein Event eintrifft, Status kurz danach nachladen.
+  useEffect(() => {
+    if (card.status !== 'ACTIVE') return;
+    const ms = new Date(card.endsAt).getTime() - Date.now();
+    if (ms > 90_000) return;
+    const t = setTimeout(() => void qc.invalidateQueries({ queryKey }), Math.max(0, ms) + 1500);
+    return () => clearTimeout(t);
+  }, [card.status, card.endsAt, qc, queryKey]);
+  const ended = card.status === 'ENDED' || card.status === 'CANCELLED';
   const ps = kwToPs(card.powerKw);
   const price = useMemo(() => formatEuro(card.currentBid ?? card.startPrice, { whole: true }), [card.currentBid, card.startPrice]);
   const href = `/haendler/auktionen/${card.id}`;
@@ -330,58 +345,57 @@ function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionC
     <article className="rise group flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md" style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }} data-testid={`auction-card-${card.number}`}>
       <Link href={href} className="relative block overflow-hidden bg-slate-100">
         {card.mainPhotoId ? (
-          <img src={photoUrl(card.vehicleId, card.mainPhotoId, 'thumb')} alt={`${card.make ?? ''} ${card.model ?? ''}`} className="aspect-[16/10] w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+          <img src={photoUrl(card.vehicleId, card.mainPhotoId, 'thumb')} alt={`${card.make ?? ''} ${card.model ?? ''}`} className={clsx('aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-105', ended && 'opacity-80')} loading="lazy" />
         ) : (
-          <div className="flex aspect-[16/10] items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-300">
-            <Car className="h-12 w-12" aria-hidden />
+          <div className="flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-300">
+            <Car className="h-10 w-10" aria-hidden />
           </div>
         )}
-        <span className={clsx('absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ring-1 ring-inset', badge.cls)}>
+        <span className={clsx('absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset', badge.cls)}>
           <span className={clsx('h-1.5 w-1.5 rounded-full', badge.dot, badge.live && 'live-dot')} aria-hidden />
           {badge.label}
         </span>
-        {card.status !== 'SCHEDULED' && (
-          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-900/85 px-2.5 py-1 font-mono text-xs font-bold tabular-nums text-white backdrop-blur">
-            <Flame className="h-3.5 w-3.5 text-brand-400" aria-hidden />
+        {!ended && card.status !== 'SCHEDULED' && (
+          <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-slate-900/85 px-2 py-0.5 font-mono text-[11px] font-bold tabular-nums text-white backdrop-blur">
+            <Flame className="h-3 w-3 text-brand-400" aria-hidden />
             <Countdown endsAt={card.endsAt} startsAt={card.startsAt} status={card.status} size="sm" />
           </span>
         )}
-        {card.myStatus && (
-          <span className={clsx('absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-bold text-white', card.myStatus === 'LEADING' ? 'bg-emerald-600' : 'bg-brand-600')}>
+        {card.myStatus && !ended && (
+          <span className={clsx('absolute bottom-2.5 left-2.5 rounded-full px-2 py-0.5 text-[10px] font-bold text-white', card.myStatus === 'LEADING' ? 'bg-emerald-600' : 'bg-brand-600')}>
             {card.myStatus === 'LEADING' ? 'Sie führen' : 'Überboten'}
           </span>
         )}
-        <button onClick={(e) => { e.preventDefault(); onFavorite(); }} className="absolute bottom-3 right-3 rounded-full bg-white/90 p-2 text-slate-500 shadow-sm backdrop-blur transition-colors hover:text-brand-600" aria-pressed={card.isFavorite} aria-label={card.isFavorite ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'} data-testid={`favorite-${card.number}`}>
-          <Heart className={clsx('h-4 w-4', card.isFavorite && 'fill-brand-500 text-brand-600')} />
+        <button onClick={(e) => { e.preventDefault(); onFavorite(); }} className="absolute bottom-2.5 right-2.5 rounded-full bg-white/90 p-1.5 text-slate-500 shadow-sm backdrop-blur transition-colors hover:text-brand-600" aria-pressed={card.isFavorite} aria-label={card.isFavorite ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'} data-testid={`favorite-${card.number}`}>
+          <Heart className={clsx('h-3.5 w-3.5', card.isFavorite && 'fill-brand-500 text-brand-600')} />
         </button>
       </Link>
-      <div className="flex flex-1 flex-col p-4">
-        <Link href={href} className="min-w-0">
-          <h3 className="truncate font-display text-base font-bold tracking-tight text-slate-900">
-            {card.make} {card.model}
-          </h3>
-          <p className="truncate text-xs text-slate-500">{card.variant || '\u00a0'}</p>
-        </Link>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+      <Link href={href} className="flex flex-1 flex-col p-3">
+        <h3 className="truncate font-display text-sm font-bold tracking-tight text-slate-900">
+          {card.make} {card.model}
+        </h3>
+        <p className="truncate text-[11px] text-slate-500">{card.variant || '\u00a0'}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
           <span>{yearOf(card.firstRegistration)}</span>
           <span className="inline-flex items-center gap-1"><Gauge className="h-3 w-3 text-slate-400" aria-hidden />{formatKm(card.mileageKm)}</span>
           <span>{card.fuel ? FUEL_LABELS[card.fuel] : '–'}</span>
           {card.powerKw ? <span>{ps} PS</span> : null}
         </div>
-        <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500">
+        <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
           <MapPin className="h-3 w-3" aria-hidden /> {card.locationZip} {card.locationCity}
         </div>
-        <div key={flash} className={clsx('mt-4 flex items-end justify-between gap-2 border-t border-slate-100 pt-3', flash > 0 && 'flash')}>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{card.currentBid !== null ? 'Aktuelles Gebot' : 'Startpreis'}</p>
-            <p className="font-mono text-2xl font-black tabular-nums text-slate-900">{price}</p>
-            <p className="text-[11px] text-slate-500">{card.bidCount} Gebot(e)</p>
+        <div key={flash} className={clsx('mt-auto flex items-end justify-between gap-2 border-t border-slate-100 pt-2.5', flash > 0 && 'flash')}>
+          <div className="min-w-0">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">{ended ? (card.currentBid !== null ? 'Höchstgebot' : 'ohne Gebot') : card.currentBid !== null ? 'Aktuelles Gebot' : 'Startpreis'}</p>
+            <p className="font-mono text-xl font-black tabular-nums text-slate-900">{price}</p>
+            <p className="text-[10px] text-slate-500">{card.bidCount} Gebot(e)</p>
           </div>
+          <span className={clsx('inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2.5 text-xs font-semibold transition-colors', ended ? 'bg-slate-100 text-slate-500 group-hover:bg-slate-200' : 'bg-brand-600 text-white group-hover:bg-brand-700')} data-testid={`bid-cta-${card.number}`}>
+            <Gavel className="h-3.5 w-3.5" aria-hidden />
+            {ended ? 'Details' : 'Bieten'}
+          </span>
         </div>
-        <LinkButton href={href} className="mt-3 w-full" icon={<Gavel className="h-4 w-4" />} testId={`bid-cta-${card.number}`}>
-          Jetzt bieten
-        </LinkButton>
-      </div>
+      </Link>
     </article>
   );
 }
