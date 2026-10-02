@@ -140,3 +140,17 @@ describe('Bildqualität', () => {
     expect(classifyQuality(computeQualityMetrics(px, w, h))).toBe('OK');
   });
 });
+
+describe('Rechtstext-Vorlagen (§61)', () => {
+  it('erkennt Vorlagen an Version oder Inhalt und meldet fehlende Arten', async () => {
+    const { isLegalTemplate, legalTemplateKinds } = await import('../legal');
+    expect(isLegalTemplate({ version: '0.1-vorlage', content: 'x' })).toBe(true);
+    expect(isLegalTemplate({ version: '1.0', content: '  [VORLAGE – NICHT RECHTSVERBINDLICH] …' })).toBe(true);
+    expect(isLegalTemplate({ version: '1.0', content: 'Allgemeine Geschäftsbedingungen der Beispiel GmbH' })).toBe(false);
+    const kinds = legalTemplateKinds([
+      { kind: 'TERMS', version: '1.0', content: 'echt' },
+      { kind: 'PRIVACY', version: '0.1-vorlage', content: '[VORLAGE]' },
+    ]);
+    expect(kinds).toEqual(['BIDDER_TERMS', 'PRIVACY', 'IMPRINT']);
+  });
+});

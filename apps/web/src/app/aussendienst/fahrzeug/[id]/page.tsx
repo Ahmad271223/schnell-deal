@@ -23,6 +23,7 @@ import {
   PdrStep,
   PhotosStep,
   TiresStep,
+  VideoStep,
   VinStep,
   type StepProps,
 } from '@/components/inspection-steps';
@@ -41,6 +42,7 @@ const STEPS: { id: string; title: string; Component: (p: StepProps) => React.Rea
   { id: 'obd', title: 'OBD / Diagnose', Component: ObdStep },
   { id: 'battery', title: 'Batterie', Component: BatteryStep },
   { id: 'features', title: 'Funktionsprüfung', Component: FeaturesStep },
+  { id: 'video', title: 'Motorvideo', Component: VideoStep },
   { id: 'summary', title: 'Zusammenfassung', Component: () => null },
 ];
 
@@ -198,6 +200,7 @@ function SummaryStep({ vehicleId, requestId, server, pendingCount, online, onGot
           Pflichtfotos: {c.photoStats.present}/{c.photoStats.required}
           {c.photoStats.badQuality > 0 && ` · ${c.photoStats.badQuality} mit Qualitätsmangel`}
         </p>
+        <p className="text-sm text-slate-600" data-testid="summary-video">Motorvideo: {server?.hasEngineVideo ? 'vorhanden' : 'nicht aufgenommen (optional)'}</p>
       </div>
       {pendingCount > 0 && <Alert tone="progress">Noch {pendingCount} Änderung(en) in der Upload-Warteschlange. Der Abschluss ist möglich, sobald alles übertragen ist.</Alert>}
       {c.missing.length > 0 && (

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { db } from './core/db/client';
-import { getObject, storageHealthy, verifyFileToken } from './core/storage';
+import { storageHealthy } from './core/storage';
 import { hub } from './core/realtime';
 import { config } from './config';
 import { schedulerStatus } from './modules/auctions/scheduler';
@@ -33,29 +33,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       status: ok ? 'ok' : 'degraded',
       db: dbOk,
       storage: storageOk,
-      scheduler: { enabled: config.SCHEDULER_ENABLED, lastTickAt: schedulerStatus.lastTickAt, stale: schedulerStale, lastError: schedulerStatus.lastError },
+      // Keine internen Fehlertexte nach außen (unauthentifizierter Endpunkt); Details liefert /admin/system.
+      scheduler: { enabled: config.SCHEDULER_ENABLED, lastTickAt: schedulerStatus.lastTickAt, stale: schedulerStale, hasError: !!schedulerStatus.lastError },
       websocketConnections: hub.connectionCount(),
       serverTime: new Date().toISOString(),
     });
-  });
-
-  // Signierte, kurzlebige Objekt-Downloads (Fotos, Dokumente, PDFs). Token wird von signedUrl() erzeugt.
-  app.get<{ Querystring: { t?: string } }>('/files', async (req, reply) => {
-    const v = req.query.t ? verifyFileToken(req.query.t) : null;
-    if (!v) return reply.status(403).send({ error: { code: 'LINK_EXPIRED', message: 'Download-Link ungültig oder abgelaufen.' } });
-    let body: Buffer;
-    try {
-      body = await getObject(v.key);
-    } catch {
-      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Datei nicht gefunden.' } });
-    }
-    const ext = (v.key.split('.').pop() || '').toLowerCase();
-    const mime =
-      ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'application/octet-stream';
-    reply.header('Content-Type', mime);
-    reply.header('Cache-Control', 'private, max-age=300');
-    if (v.downloadName) reply.header('Content-Disposition', `attachment; filename="${v.downloadName.replace(/[^A-Za-z0-9._-]/g, '_')}"`);
-    return reply.send(body);
   });
 
   await app.register(authRoutes);

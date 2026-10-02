@@ -1,8 +1,9 @@
 'use client';
 
 import clsx from 'clsx';
-import { Camera, CheckCircle2, CircleAlert, Clock, FileText, Plus, ScanLine, Sparkles, Trash2 } from 'lucide-react';
+import { Camera, CheckCircle2, CircleAlert, Clock, FileText, Plus, ScanLine, Sparkles, Trash2, Video } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   BATTERY_KIND_LABELS,
   BATTERY_KINDS,
@@ -57,7 +58,7 @@ import {
   type PhotoSlot,
   type VehicleDocumentKind,
 } from '@sd/shared';
-import { api, errorMessage, newId, photoUrl } from '@/lib/api';
+import { api, errorMessage, newId, photoUrl, vehicleVideoUrl } from '@/lib/api';
 import { useMe } from '@/lib/session';
 import { barcodeSupported, checkPhotoQuality, scanBarcode } from '@/lib/image';
 import { outbox, useDraft, type OutboxItem } from '@/lib/outbox';
@@ -325,7 +326,7 @@ export function VinStep({ vehicleId, server, pending, onNext }: StepProps) {
       </div>
       {aiVision && (
         <div className="space-y-2">
-          {ai.state === 'idle' && <p className="text-xs text-slate-500">{hasVinPhoto ? 'Die FIN kann aus dem gespeicherten FIN-Foto gelesen werden.' : 'Nach dem FIN-Foto wird die FIN automatisch gelesen und hier eingetragen.'}</p>}
+          {ai.state === 'idle' && <p className="text-xs text-slate-500">{hasVinPhoto ? 'Die FIN kann aus dem gespeicherten FIN-Foto gelesen werden.' : 'Nach dem FIN-Foto wird die FIN automatisch gelesen und hier eingetragen.'} Bitte die FIN-Plakette am Fahrzeug fotografieren, nicht den Fahrzeugschein (enthält Halterdaten).</p>}
           {ai.state === 'busy' && (
             <p className="flex items-center gap-2 text-sm text-slate-700" role="status">
               <Sparkles className="h-4 w-4 animate-pulse text-brand-700" aria-hidden /> FIN wird vom Foto gelesen …
@@ -1008,6 +1009,82 @@ export function FeaturesStep({ vehicleId, server, onNext }: StepProps) {
         </fieldset>
       ))}
       <StepFooter onSave={save} saveLabel={`Speichern und weiter (${filled.length}/${FEATURES.length})`} disabled={filled.length === 0} />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Schritt 13: Motorvideo (optional)
+const VIDEO_MAX_MB = 100;
+
+/**
+ * Kurzes Video des laufenden Motors (Start, Leerlauf, kurzer Gasstoß). Optional, aber für Händler ein
+ * wichtiges Kaufkriterium. Geht über die Upload-Warteschlange (offlinefähig, Wiederholung nach Abbruch).
+ */
+export function VideoStep({ vehicleId, server, pending, onNext }: StepProps) {
+  const qc = useQueryClient();
+  const local = [...pending].reverse().find((i) => i.kind === 'file' && i.url.endsWith('/media/video'));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [playerKey, setPlayerKey] = useState(0);
+  const onFile = (f: File) => {
+    setError(null);
+    if (!f.type.startsWith('video/')) {
+      setError('Bitte eine Videodatei aufnehmen oder auswählen.');
+      return;
+    }
+    if (f.size > VIDEO_MAX_MB * 1024 * 1024) {
+      setError(`Das Video ist ${Math.round(f.size / 1048576)} MB groß, erlaubt sind ${VIDEO_MAX_MB} MB. Bitte kürzer aufnehmen (10 bis 30 Sekunden genügen).`);
+      return;
+    }
+    const ext = f.name.includes('.') ? f.name.slice(f.name.lastIndexOf('.')) : f.type === 'video/webm' ? '.webm' : f.type === 'video/quicktime' ? '.mov' : '.mp4';
+    void outbox.enqueue({ id: newId(), vehicleId, kind: 'file', method: 'POST', url: `/vehicles/${vehicleId}/media/video`, file: f, fileName: `motorvideo${ext}`, fields: {}, label: 'Motorvideo' });
+  };
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/vehicles/${vehicleId}/media/video`, { method: 'DELETE' });
+      setPlayerKey((k) => k + 1);
+      await qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const stored = !!server?.hasEngineVideo && !local;
+  return (
+    <div className="space-y-3">
+      <Alert tone="info">10 bis 30 Sekunden genügen: Motor starten, Leerlauf, ein kurzer Gasstoß. Das Video ist optional und wird Händlern auf der Auktionsseite gezeigt.</Alert>
+      {stored ? (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3" data-testid="video-stored">
+          <p className="flex items-center gap-2 text-sm font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4" aria-hidden /> Motorvideo gespeichert
+          </p>
+          <video key={playerKey} src={vehicleVideoUrl(vehicleId)} controls preload="metadata" playsInline className="mt-2 aspect-video w-full rounded-md bg-black" />
+        </div>
+      ) : local ? (
+        <Alert tone={local.status === 'error' ? 'danger' : 'progress'} title={local.status === 'error' ? 'Upload fehlgeschlagen' : undefined}>
+          {local.status === 'error' ? (local.lastError ?? 'Bitte erneut versuchen.') : 'Video wird übertragen … Sie können währenddessen weiterarbeiten.'}
+        </Alert>
+      ) : (
+        <p className="text-sm text-slate-600">Noch kein Motorvideo aufgenommen.</p>
+      )}
+      {error && <Alert tone="danger">{error}</Alert>}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <CameraInput accept="video/*" onFile={onFile} inputLabel="Motorvideo aufnehmen" className="flex h-14 items-center justify-center gap-2 rounded-lg bg-brand-600 text-base font-semibold text-white">
+          <Video className="h-5 w-5" aria-hidden /> {stored || local ? 'Neu aufnehmen' : 'Video aufnehmen'}
+        </CameraInput>
+        <CameraInput accept="video/mp4,video/webm,video/quicktime" capture={false} onFile={onFile} inputLabel="Video aus der Galerie wählen" className="flex h-14 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-base font-medium text-slate-800">
+          Aus Galerie wählen
+        </CameraInput>
+      </div>
+      {stored && (
+        <Button variant="ghost" onClick={remove} loading={busy} icon={<Trash2 className="h-4 w-4" />}>
+          Video entfernen
+        </Button>
+      )}
+      <StepFooter onSave={() => onNext()} saveLabel="Weiter" />
     </div>
   );
 }

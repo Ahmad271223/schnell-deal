@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import os from 'node:os';
 import { sql } from 'drizzle-orm';
 import { db, schema, type DbOrTx } from './db/client';
@@ -9,13 +10,22 @@ import { db, schema, type DbOrTx } from './db/client';
  * - Worker holen Jobs mit `FOR UPDATE SKIP LOCKED` → mehrere Worker parallel möglich.
  * - Reihenfolge nach Priorität, dann Fälligkeit: Ein Rückstau an E-Mails verzögert keine Deal-PDFs oder Fotos.
  * - Fehlschläge: exponentielles Backoff, nach `maxAttempts` Status FAILED + Admin-Benachrichtigung.
- * - Abgestürzte Worker: hängende RUNNING-Jobs werden nach 5 Minuten wieder freigegeben.
+ * - Abgestürzte Worker: hängende RUNNING-Jobs werden nach 5 Minuten wieder freigegeben. Laufende Jobs senden dafür
+ *   jede Minute ein Lebenszeichen (`locked_at`), damit lange Jobs nicht doppelt laufen.
+ * - Sperr-Token: Jede Übernahme erhält ein eigenes Token in `locked_by`; Statusänderungen gelten nur, wenn das Token
+ *   noch gilt. Ein Lauf, dessen Job zwischenzeitlich neu vergeben wurde, kann dessen Status nicht mehr überschreiben.
+ * - Zwischenstand (`checkpoint`): Handler persistieren vor nicht wiederholbaren Nebenwirkungen (E-Mail, Push), was
+ *   bereits erledigt ist; eine Wiederholung setzt dort an, statt doppelt zu senden.
  */
 
 export type JobType = 'image.process' | 'pdf.deal' | 'email.send' | 'push.send';
 
 /** Abarbeitungsreihenfolge (kleinere Zahl zuerst): Deal-Dokumente und Fotos warten nie hinter Benachrichtigungen. */
 export const JOB_PRIORITY: Record<JobType, number> = { 'pdf.deal': 10, 'image.process': 20, 'push.send': 50, 'email.send': 60 };
+
+/** Nach dieser Zeit ohne Lebenszeichen gilt ein RUNNING-Job als verwaist. */
+export const STALE_AFTER_MS = 5 * 60_000;
+const HEARTBEAT_MS = 60_000;
 
 export interface EnqueueOptions {
   runAt?: Date;
@@ -37,8 +47,20 @@ export async function enqueue(tx: DbOrTx, type: JobType, payload: Record<string,
     .onConflictDoNothing();
 }
 
+export interface JobContext {
+  id: number;
+  attempts: number;
+  /** Zwischenstand des vorherigen Versuchs (null beim ersten Lauf). */
+  checkpoint: Record<string, unknown> | null;
+  /**
+   * Zwischenstand sofort persistieren (eigene Transaktion), bevor eine nicht wiederholbare Nebenwirkung ausgelöst wird.
+   * Wirft, wenn die Sperre inzwischen verloren ging: dann darf die Nebenwirkung nicht mehr ausgelöst werden.
+   */
+  saveCheckpoint: (data: Record<string, unknown>) => Promise<void>;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type JobHandler = (payload: any, job: { id: number; attempts: number }) => Promise<void>;
+export type JobHandler = (payload: any, job: JobContext) => Promise<void>;
 
 export interface WorkerOptions {
   handlers: Partial<Record<JobType, JobHandler>>;
@@ -53,6 +75,14 @@ interface ClaimedJob {
   payload: unknown;
   attempts: number;
   maxAttempts: number;
+  checkpoint: Record<string, unknown> | null;
+  lockToken: string;
+}
+
+export class LockLostError extends Error {
+  constructor(jobId: number) {
+    super(`Job ${jobId}: Sperre verloren (vom Reaper neu vergeben), Lauf abgebrochen`);
+  }
 }
 
 export class JobWorker {
@@ -148,8 +178,9 @@ export class JobWorker {
   private async claim(): Promise<ClaimedJob | null> {
     const types = Object.keys(this.opts.handlers);
     if (types.length === 0) return null;
-    const res = await db.execute<{ id: number; type: string; payload: unknown; attempts: number; max_attempts: number }>(sql`
-      UPDATE jobs SET status = 'RUNNING', locked_at = now(), locked_by = ${this.workerId}, attempts = attempts + 1
+    const lockToken = `${this.workerId}#${crypto.randomUUID()}`;
+    const res = await db.execute<{ id: number; type: string; payload: unknown; attempts: number; max_attempts: number; checkpoint: Record<string, unknown> | null }>(sql`
+      UPDATE jobs SET status = 'RUNNING', locked_at = now(), locked_by = ${lockToken}, attempts = attempts + 1
       WHERE id = (
         SELECT id FROM jobs
         WHERE status = 'PENDING' AND run_at <= now() AND type IN (${sql.join(
@@ -160,36 +191,63 @@ export class JobWorker {
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
-      RETURNING id, type, payload, attempts, max_attempts`);
+      RETURNING id, type, payload, attempts, max_attempts, checkpoint`);
     const row = res.rows[0];
     if (!row) return null;
-    return { id: Number(row.id), type: row.type, payload: row.payload, attempts: row.attempts, maxAttempts: row.max_attempts };
+    return { id: Number(row.id), type: row.type, payload: row.payload, attempts: row.attempts, maxAttempts: row.max_attempts, checkpoint: row.checkpoint ?? null, lockToken };
+  }
+
+  /** Statusänderung nur, solange dieser Lauf die Sperre hält; sonst 0 Zeilen. */
+  private async guardedUpdate(job: ClaimedJob, set: ReturnType<typeof sql>): Promise<boolean> {
+    const res = await db.execute(sql`UPDATE jobs SET ${set} WHERE id = ${job.id} AND locked_by = ${job.lockToken} AND status = 'RUNNING'`);
+    return (res.rowCount ?? 0) > 0;
   }
 
   private async execute(job: ClaimedJob): Promise<void> {
     const handler = this.opts.handlers[job.type as JobType];
+    // Lebenszeichen, damit der Reaper lange Jobs (große Fotos, PDFs) nicht als verwaist einstuft.
+    const heartbeat = setInterval(() => {
+      void this.guardedUpdate(job, sql`locked_at = now()`).catch((err) => console.error(`[jobs] Lebenszeichen für Job ${job.id} fehlgeschlagen`, (err as Error).message));
+    }, HEARTBEAT_MS);
+    const ctx: JobContext = {
+      id: job.id,
+      attempts: job.attempts,
+      checkpoint: job.checkpoint,
+      saveCheckpoint: async (data) => {
+        const ok = await this.guardedUpdate(job, sql`checkpoint = ${JSON.stringify(data)}::jsonb, locked_at = now()`);
+        if (!ok) throw new LockLostError(job.id);
+        job.checkpoint = data;
+      },
+    };
     try {
       if (!handler) throw new Error(`Kein Handler für Job-Typ ${job.type}`);
-      await handler(job.payload, { id: job.id, attempts: job.attempts });
-      await db.execute(sql`UPDATE jobs SET status = 'DONE', finished_at = now(), last_error = NULL WHERE id = ${job.id}`);
+      await handler(job.payload, ctx);
+      const ok = await this.guardedUpdate(job, sql`status = 'DONE', finished_at = now(), last_error = NULL`);
+      if (!ok) console.warn(`[jobs] Job ${job.id} (${job.type}) wurde während der Ausführung neu vergeben; dieser Lauf ändert den Status nicht mehr.`);
     } catch (err) {
       const message = (err as Error).stack ?? String(err);
       const final = job.attempts >= job.maxAttempts;
       const backoffSec = Math.min(3600, 5 * 2 ** (job.attempts - 1));
       const nextStatus = final ? 'FAILED' : 'PENDING';
-      await db.execute(sql`
-        UPDATE jobs SET
-          status = ${nextStatus}::job_status,
+      const ok = await this.guardedUpdate(
+        job,
+        sql`status = ${nextStatus}::job_status,
           last_error = ${message.slice(0, 4000)},
           run_at = now() + make_interval(secs => ${backoffSec}),
-          finished_at = ${final ? sql`now()` : sql`NULL`}
-        WHERE id = ${job.id}`);
+          finished_at = ${final ? sql`now()` : sql`NULL`}`,
+      );
+      if (!ok) {
+        console.warn(`[jobs] Job ${job.id} (${job.type}) scheiterte in einem Lauf, der die Sperre bereits verloren hatte: ${(err as Error).message}`);
+        return;
+      }
       console.error(`[jobs] Job ${job.id} (${job.type}) fehlgeschlagen (Versuch ${job.attempts}/${job.maxAttempts}):`, (err as Error).message);
       if (final && this.opts.onFailed) {
         await this.opts
           .onFailed({ id: job.id, type: job.type, error: (err as Error).message })
           .catch((e) => console.error('[jobs] onFailed-Handler fehlgeschlagen', e));
       }
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
@@ -197,8 +255,8 @@ export class JobWorker {
     try {
       await db.execute(sql`
         UPDATE jobs SET status = 'PENDING', locked_at = NULL, locked_by = NULL,
-          last_error = 'Worker-Abbruch erkannt, erneut eingeplant'
-        WHERE status = 'RUNNING' AND locked_at < now() - interval '5 minutes'`);
+          last_error = 'Worker-Abbruch erkannt (kein Lebenszeichen), erneut eingeplant'
+        WHERE status = 'RUNNING' AND locked_at < now() - make_interval(secs => ${STALE_AFTER_MS / 1000})`);
     } catch (err) {
       console.error('[jobs] Reaper-Fehler', (err as Error).message);
     }

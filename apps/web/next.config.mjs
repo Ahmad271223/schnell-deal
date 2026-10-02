@@ -15,6 +15,8 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${storageOrigin} https://*.tile.openstreetmap.org`,
+  // Motorvideo kommt per Weiterleitung vom Objektspeicher (<video> fällt sonst auf default-src zurück und wird blockiert).
+  `media-src 'self' blob: ${storageOrigin}`,
   `connect-src 'self' ${wsOrigin} ${storageOrigin} ws: wss:`,
   "font-src 'self' data:",
   "frame-ancestors 'none'",
@@ -33,7 +35,6 @@ const securityHeaders = [
 
 export default {
   reactStrictMode: true,
-  allowedDevOrigins: ['*.preview.emergentagent.com', '*.preview.emergentcf.cloud', '*.cluster-5.preview.emergentcf.cloud'],
   // Separates Build-Verzeichnis z. B. für E2E-Tests parallel zum Dev-Server.
   distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // Standalone-Ausgabe nur im Container-Build (benötigt Symlinks, unter Windows ohne Adminrechte nicht möglich).

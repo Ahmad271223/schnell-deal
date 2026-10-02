@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// drainJobs() arbeitet die gemeinsame Warteschlange ab, in der parallel laufende Testdateien Foto- und PDF-Jobs einreihen.
+vi.setConfig({ testTimeout: 120_000 });
 import { config } from '../src/config';
 import { db, schema } from '../src/core/db/client';
 import { checkVehicleFraming, normalizeRecognizedVin, recognizeVinFromImage, setAnthropicTransport, type AnthropicTransport } from '../src/core/ai-vision';

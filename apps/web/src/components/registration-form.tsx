@@ -30,7 +30,6 @@ export function RegistrationForm({ type }: { type: Type }) {
     passwordRepeat: '',
   });
   const [tradeLicense, setTradeLicense] = useState<File | null>(null);
-  const [idDocument, setIdDocument] = useState<File | null>(null);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [acceptBidderTerms, setAcceptBidderTerms] = useState(false);
@@ -73,13 +72,6 @@ export function RegistrationForm({ type }: { type: Type }) {
           ? { ...common, brands: v.brands.split(',').map((b) => b.trim()).filter(Boolean) }
           : { ...common, tradeType: v.tradeType, bankIban: v.bankIban || null, acceptBidderTerms };
       await api(type === 'DEALERSHIP' ? '/register/dealership' : '/register/dealer', { method: 'POST', body });
-      if (idDocument) {
-        setStep('Ausweisdokument wird hochgeladen …');
-        const fd = new FormData();
-        fd.append('kind', 'ID_DOCUMENT');
-        fd.append('file', idDocument);
-        await api('/company/documents', { method: 'POST', body: fd });
-      }
       if (tradeLicense) {
         setStep('Gewerbenachweis wird hochgeladen …');
         const fd = new FormData();
@@ -177,11 +169,6 @@ export function RegistrationForm({ type }: { type: Type }) {
           <Field label="Gewerbenachweis" required hint="PDF, JPG oder PNG, max. 25 MB. Ohne Nachweis bleibt der Status „Unterlagen fehlen“.">
             <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setTradeLicense(e.target.files?.[0] ?? null)} className="text-sm" />
           </Field>
-          {type === 'DEALER' && (
-            <Field label="Ausweisdokument der verantwortlichen Person (optional)" hint="Wird nur für die Prüfung verwendet.">
-              <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setIdDocument(e.target.files?.[0] ?? null)} className="text-sm" />
-            </Field>
-          )}
         </div>
       </Card>
 

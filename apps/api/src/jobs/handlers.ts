@@ -9,7 +9,20 @@ import { notifyAdmins } from '../modules/notifications/service';
 import { processPhotoJob } from '../modules/vehicles/photo-processing';
 import { generateDealDocumentsJob } from '../modules/deals/pdf';
 
-const emailHandler: JobHandler = async (payload: { notificationId?: string; to: string; subject: string; text: string }) => {
+/**
+ * E-Mail höchstens einmal: Der Zwischenstand „Versand begonnen“ wird vor dem SMTP-Aufruf gespeichert. Stürzt der
+ * Worker danach ab, sendet die Wiederholung nicht erneut (Zustellung ungewiss, Status UNCERTAIN), statt Händlern
+ * dieselbe Zuschlags- oder Zahlungsnachricht zweimal zu schicken.
+ */
+const emailHandler: JobHandler = async (payload: { notificationId?: string; to: string; subject: string; text: string }, job) => {
+  if (job.checkpoint?.smtpStarted) {
+    console.warn(`[jobs] E-Mail-Job ${job.id}: vorheriger Versuch war bereits beim Versand – kein erneuter Versand, Zustellung ungewiss.`);
+    if (payload.notificationId) {
+      await db.update(schema.notifications).set({ emailStatus: 'UNCERTAIN' }).where(eq(schema.notifications.id, payload.notificationId));
+    }
+    return;
+  }
+  await job.saveCheckpoint({ smtpStarted: true });
   await sendMail({ to: payload.to, subject: payload.subject, text: payload.text });
   if (payload.notificationId) {
     await db.update(schema.notifications).set({ emailStatus: 'SENT' }).where(eq(schema.notifications.id, payload.notificationId));
@@ -17,19 +30,24 @@ const emailHandler: JobHandler = async (payload: { notificationId?: string; to: 
 };
 
 let vapidReady = false;
-const pushHandler: JobHandler = async (payload: { userId: string; title: string; body: string; link: string | null }) => {
+/** Push je Abonnement genau einmal: erfolgreich bediente Abonnements stehen im Zwischenstand und werden bei Wiederholung übersprungen. */
+const pushHandler: JobHandler = async (payload: { userId: string; title: string; body: string; link: string | null }, job) => {
   if (!config.VAPID_PUBLIC_KEY || !config.VAPID_PRIVATE_KEY) return;
   if (!vapidReady) {
     webpush.setVapidDetails(config.VAPID_SUBJECT, config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY);
     vapidReady = true;
   }
+  const sent = new Set<string>(Array.isArray(job.checkpoint?.sent) ? (job.checkpoint!.sent as string[]) : []);
   const subs = await db.select().from(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.userId, payload.userId));
   for (const s of subs) {
+    if (sent.has(s.id)) continue;
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: s.keys as { p256dh: string; auth: string } },
         JSON.stringify({ title: payload.title, body: payload.body, link: payload.link }),
       );
+      sent.add(s.id);
+      await job.saveCheckpoint({ sent: [...sent] });
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
       // Abgelaufene Subscriptions entfernen.

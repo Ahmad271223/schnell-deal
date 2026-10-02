@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CircleCheck, Disc3, FileText, Info } from 'lucide-react';
+import { AlertTriangle, CircleCheck, Disc3, FileText, Info, Minus } from 'lucide-react';
 import {
   BATTERY_KIND_LABELS,
   BODY_LABELS,
@@ -27,7 +27,7 @@ import {
   VEHICLE_DOCUMENT_KIND_LABELS,
   type DamageZone,
 } from '@sd/shared';
-import { photoUrl, vehicleDocUrl } from '@/lib/api';
+import { photoUrl, vehicleDocUrl, vehicleVideoUrl } from '@/lib/api';
 import type { VehicleFile } from '@/lib/types';
 import { DamageSketch } from './damage-sketch';
 import { PhotoGallery } from './photo-gallery';
@@ -58,6 +58,7 @@ export function VehicleFileView({ file, showQuality, extraTabs }: { file: Vehicl
     { id: 'diagnostics', label: 'Diagnose', count: codes },
     { id: 'photos', label: 'Bilder', count: file.photos.filter((p) => !p.replaced).length },
     { id: 'documents', label: 'Dokumente', count: file.documents.length },
+    ...(file.hasEngineVideo ? [{ id: 'video', label: 'Motorvideo' }] : []),
     ...(extraTabs ?? []).map((t) => ({ id: t.id, label: t.label })),
   ];
 
@@ -109,6 +110,7 @@ export function VehicleFileView({ file, showQuality, extraTabs }: { file: Vehicl
         {tab === 'diagnostics' && <DiagnosticsSection file={file} />}
         {tab === 'photos' && <PhotoGallery vehicleId={file.id} photos={file.photos} showQuality={showQuality} />}
         {tab === 'documents' && <DocumentsSection file={file} />}
+        {tab === 'video' && <video src={vehicleVideoUrl(file.id)} controls preload="metadata" playsInline className="aspect-video w-full max-w-2xl rounded-xl bg-black" data-testid="vehicle-video" />}
         {extraTabs?.map((t) => (tab === t.id ? <div key={t.id}>{t.content}</div> : null))}
       </div>
     </div>
@@ -140,13 +142,14 @@ export function ConditionSection({ file }: { file: VehicleFile }) {
           <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
             {file.features.map((f) => {
               const [label, tone] = FEATURE_RESULT_LABELS[f.result];
-              const good = tone === 'success' || tone === 'neutral';
+              // Nur ein geprüftes „Funktioniert“ ist grün; „nicht geprüft“/„nicht vorhanden“ bleiben neutral (kein Haken).
+              const cls = tone === 'success' ? 'text-emerald-700' : tone === 'danger' ? 'text-red-700' : 'text-slate-500';
               return (
                 <li key={f.feature} className="flex items-center justify-between gap-3 px-4 py-3">
                   <span className="text-sm font-medium text-slate-900">{FEATURE_LABELS[f.feature]}</span>
-                  <span className={clsx('inline-flex items-center gap-1.5 text-sm font-medium', good ? 'text-emerald-700' : 'text-amber-700')}>
-                    {good ? <CircleCheck className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
-                    {f.note || label}
+                  <span className={clsx('inline-flex items-center gap-1.5 text-sm font-medium', cls)}>
+                    {tone === 'success' ? <CircleCheck className="h-4 w-4" aria-hidden /> : tone === 'danger' ? <AlertTriangle className="h-4 w-4" aria-hidden /> : <Minus className="h-4 w-4" aria-hidden />}
+                    {f.note ? `${label}: ${f.note}` : label}
                   </span>
                 </li>
               );

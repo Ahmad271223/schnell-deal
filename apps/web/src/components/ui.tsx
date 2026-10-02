@@ -20,12 +20,14 @@ import {
   isValidElement,
   useEffect,
   useId,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { Tone } from '@sd/shared';
 import { errorMessage } from '@/lib/api';
 
@@ -300,9 +302,19 @@ export function EmptyState({ title, children, icon }: { title: string; children?
 
 export function QueryState({ query, children, empty }: { query: { isLoading: boolean; error: unknown; data?: unknown }; children: ReactNode; empty?: ReactNode }) {
   if (query.isLoading) return <Spinner />;
-  if (query.error) return <ErrorAlert error={query.error} />;
+  // Nachlade-Fehler (z. B. Funkloch) verdecken vorhandene Daten nicht: Inhalt bleibt stehen, Hinweis darüber.
+  if (query.error && query.data === undefined) return <ErrorAlert error={query.error} />;
   if (empty && Array.isArray(query.data) && query.data.length === 0) return <>{empty}</>;
-  return <>{children}</>;
+  return (
+    <>
+      {query.error ? (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="status">
+          Aktualisierung fehlgeschlagen ({errorMessage(query.error)}). Angezeigt wird der zuletzt geladene Stand.
+        </p>
+      ) : null}
+      {children}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------- Tabelle
@@ -357,6 +369,17 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
 }
 
 // ---------------------------------------------------------------- Dialog
+/**
+ * Rendert Überlagerungen (Dialoge, Vollbild) direkt unter <body>. Sonst bleiben sie im Stacking-Kontext ihres
+ * Elternteils gefangen (z. B. einer klebenden Seitenspalte) und werden von später gezeichneten Elementen überdeckt.
+ */
+export function Portal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
+}
+
 export function Modal({ open, onClose, title, children, footer, size = 'md' }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; size?: 'md' | 'lg' | 'xl' }) {
   useEffect(() => {
     if (!open) return;
@@ -366,6 +389,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: {
   }, [open, onClose]);
   if (!open) return null;
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4" onMouseDown={onClose}>
       <div
         role="dialog"
@@ -384,6 +408,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: {
         {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3">{footer}</div>}
       </div>
     </div>
+    </Portal>
   );
 }
 

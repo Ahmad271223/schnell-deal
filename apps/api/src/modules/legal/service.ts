@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, lte, sql } from 'drizzle-orm';
-import type { CompanyType, LegalKind } from '@sd/shared';
+import { legalTemplateKinds, type CompanyType, type LegalKind } from '@sd/shared';
+import { AppError } from '../../core/errors';
 import { db, schema, type DbOrTx } from '../../core/db/client';
 
 export type LegalDoc = typeof schema.legalDocuments.$inferSelect;
@@ -17,6 +18,27 @@ export async function activeLegalDocuments(tx: DbOrTx = db, kinds?: LegalKind[])
     )
     .orderBy(schema.legalDocuments.kind, desc(schema.legalDocuments.activeFrom), desc(schema.legalDocuments.createdAt));
   return rows;
+}
+
+/** Rechtstext-Arten, deren aktuelle Fassung noch Vorlage ist oder fehlt (Spec §61). */
+export async function pendingLegalTemplates(tx: DbOrTx = db): Promise<LegalKind[]> {
+  return legalTemplateKinds(await activeLegalDocuments(tx));
+}
+
+/**
+ * Sperre für den echten Betrieb: Solange Rechtstexte Vorlagen sind, dürfen keine Auktionen eingeplant oder gestartet
+ * werden. `enforce` ist nur in Produktion wahr; in Entwicklung, Test und Staging wird nur gewarnt (Admin-Systemstatus).
+ */
+export async function assertLegalReadyForAuctions(tx: DbOrTx, enforce: boolean): Promise<void> {
+  if (!enforce) return;
+  const kinds = await pendingLegalTemplates(tx);
+  if (kinds.length === 0) return;
+  throw new AppError(
+    409,
+    'LEGAL_TEMPLATES_ACTIVE',
+    `Rechtstexte sind noch Vorlagen oder fehlen (${kinds.join(', ')}). Vor der ersten Auktion unter Einstellungen → Rechtstexte juristisch geprüfte Fassungen veröffentlichen.`,
+    { kinds },
+  );
 }
 
 export function requiredLegalKinds(companyType: CompanyType | null): LegalKind[] {

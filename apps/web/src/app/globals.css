@@ -182,3 +182,18 @@ h3,
     animation: none;
   }
 }
+
+/* Wisch-Reihen ohne sichtbaren Scrollbalken (der Inhalt bleibt per Finger, Maus und Tastatur scrollbar) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Milchglas-Leisten (iOS-Stil) */
+.glass {
+  background: rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+}

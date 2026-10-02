@@ -1,70 +1,63 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { fileTypeFromBuffer } from 'file-type';
 import { config } from '../config';
 import { AppError } from './errors';
 
-/**
- * Lokaler, persistenter Objektspeicher (Dateisystem) unter STORAGE_DIR.
- * Ersetzt in dieser Umgebung MinIO/S3; die API liefert Objekte serverseitig aus
- * bzw. über kurzlebige, signierte /files-Links (signedUrl).
- */
-const STORAGE_DIR = process.env.STORAGE_DIR || '/app/.storage';
-const SIGN_SECRET = config.S3_SECRET_KEY || 'schnelldeal-local-secret';
+const baseClientConfig = {
+  region: config.S3_REGION,
+  forcePathStyle: config.S3_FORCE_PATH_STYLE,
+  credentials: { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY },
+};
 
-function safeResolve(key: string): string {
-  const full = path.resolve(STORAGE_DIR, key);
-  if (!full.startsWith(path.resolve(STORAGE_DIR) + path.sep)) throw new AppError(400, 'BAD_KEY', 'Ungültiger Objektschlüssel.');
-  return full;
+const s3 = new S3Client({ ...baseClientConfig, endpoint: config.S3_ENDPOINT });
+/** Separater Client nur zum Signieren mit der öffentlich erreichbaren Adresse. */
+const s3Public = new S3Client({ ...baseClientConfig, endpoint: config.S3_PUBLIC_ENDPOINT ?? config.S3_ENDPOINT });
+
+export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: config.S3_BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      // Objekte sind privat; der Bucket hat keine anonyme Policy.
+    }),
+  );
 }
 
-export async function putObject(key: string, body: Buffer, _contentType: string): Promise<void> {
-  const full = safeResolve(key);
-  await fs.mkdir(path.dirname(full), { recursive: true });
-  await fs.writeFile(full, body);
+/** Objekt entfernen (z. B. wenn die zugehörige Datenbanktransaktion scheiterte, damit keine verwaisten Dateien bleiben). */
+export async function deleteObject(key: string): Promise<void> {
+  await s3.send(new DeleteObjectCommand({ Bucket: config.S3_BUCKET, Key: key }));
 }
 
 export async function getObject(key: string): Promise<Buffer> {
-  try {
-    return await fs.readFile(safeResolve(key));
-  } catch {
-    throw new Error(`Objekt ${key} nicht gefunden`);
-  }
+  const res = await s3.send(new GetObjectCommand({ Bucket: config.S3_BUCKET, Key: key }));
+  if (!res.Body) throw new Error(`Objekt ${key} ohne Inhalt`);
+  const bytes = await res.Body.transformToByteArray();
+  return Buffer.from(bytes);
 }
 
-/** Kurzlebige, signierte Download-URL (HMAC über Schlüssel + Ablaufzeit). Nur nach Autorisierung aufrufen. */
+/** Kurzlebige Signed URL (Standard 5 Minuten). Nur nach erfolgter Autorisierung aufrufen. */
 export async function signedUrl(key: string, opts: { downloadName?: string; ttlSeconds?: number } = {}): Promise<string> {
-  const exp = Date.now() + (opts.ttlSeconds ?? config.SIGNED_URL_TTL_SECONDS) * 1000;
-  const payload = JSON.stringify({ k: key, exp, dn: opts.downloadName ?? null });
-  const b64 = Buffer.from(payload).toString('base64url');
-  const sig = crypto.createHmac('sha256', SIGN_SECRET).update(b64).digest('hex');
-  const base = (config.PUBLIC_WEB_URL || '').replace(/\/$/, '');
-  return `${base}/api/v1/files?t=${b64}.${sig}`;
-}
-
-/** Validiert ein signiertes Token und gibt Objektschlüssel + Download-Namen zurück (oder null). */
-export function verifyFileToken(token: string): { key: string; downloadName: string | null } | null {
-  const dot = token.lastIndexOf('.');
-  if (dot < 0) return null;
-  const b64 = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  const expected = crypto.createHmac('sha256', SIGN_SECRET).update(b64).digest('hex');
-  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  try {
-    const { k, exp, dn } = JSON.parse(Buffer.from(b64, 'base64url').toString()) as { k: string; exp: number; dn: string | null };
-    if (typeof exp !== 'number' || Date.now() > exp) return null;
-    return { key: k, downloadName: dn };
-  } catch {
-    return null;
-  }
+  return getSignedUrl(
+    s3Public,
+    new GetObjectCommand({
+      Bucket: config.S3_BUCKET,
+      Key: key,
+      ResponseContentDisposition: opts.downloadName
+        ? `attachment; filename="${opts.downloadName.replace(/[^A-Za-z0-9._-]/g, '_')}"`
+        : undefined,
+    }),
+    { expiresIn: opts.ttlSeconds ?? config.SIGNED_URL_TTL_SECONDS },
+  );
 }
 
 export async function storageHealthy(): Promise<boolean> {
   try {
-    await fs.mkdir(STORAGE_DIR, { recursive: true });
-    await fs.access(STORAGE_DIR);
+    await s3.send(new HeadBucketCommand({ Bucket: config.S3_BUCKET }));
     return true;
   } catch {
     return false;
@@ -83,6 +76,7 @@ export function sha256(buf: Buffer): string {
 }
 
 export const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'] as const;
+/** Motorvideo: Smartphone-Formate (MP4/H.264, WebM, MOV). Es findet keine Umkodierung statt. */
 export const VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime'] as const;
 export const DOCUMENT_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] as const;
 
@@ -97,10 +91,11 @@ export interface ValidatedFile {
  * Prüft den tatsächlichen Dateityp über Magic Bytes (nicht über Dateiname/Content-Type des Clients),
  * die Größe und – falls konfiguriert – einen Virenscan via ClamAV.
  */
-export async function validateUpload(buf: Buffer, allowed: readonly string[]): Promise<ValidatedFile> {
+export async function validateUpload(buf: Buffer, allowed: readonly string[], opts: { maxMb?: number } = {}): Promise<ValidatedFile> {
+  const maxMb = opts.maxMb ?? config.MAX_UPLOAD_MB;
   if (buf.length === 0) throw new AppError(400, 'EMPTY_FILE', 'Die Datei ist leer.');
-  if (buf.length > config.MAX_UPLOAD_MB * 1024 * 1024) {
-    throw new AppError(413, 'FILE_TOO_LARGE', `Die Datei überschreitet ${config.MAX_UPLOAD_MB} MB.`);
+  if (buf.length > maxMb * 1024 * 1024) {
+    throw new AppError(413, 'FILE_TOO_LARGE', `Die Datei überschreitet ${maxMb} MB.`);
   }
   const type = await fileTypeFromBuffer(buf);
   if (!type || !allowed.includes(type.mime)) {
@@ -111,10 +106,15 @@ export async function validateUpload(buf: Buffer, allowed: readonly string[]): P
   return { mime: type.mime, ext: type.ext, sha256: sha256(buf), size: buf.length };
 }
 
-/** Lehnt PDFs mit eingebettetem JavaScript oder Auto-Aktionen ab. */
+/**
+ * Grundschutz gegen PDFs mit Skripten, Startaktionen und Formular-Übermittlungen. Ein vollständiger PDF-Parser ist das
+ * nicht (komprimierte Objektströme bleiben ungeprüft); der eigentliche Schutz sind der Virenscanner (fail closed) und
+ * die Auslieferung als Download statt Anzeige im Browser.
+ */
 function assertSafePdf(buf: Buffer): void {
-  const text = buf.toString('latin1');
-  if (/\/JavaScript|\/JS\s|\/Launch|\/OpenAction\s*<<[^>]*\/JS/i.test(text)) {
+  // Hex-Escapes in Namen auflösen (/J#53 → /JS), damit kodierte Namen die Prüfung nicht umgehen.
+  const text = buf.toString('latin1').replace(/#([0-9a-fA-F]{2})/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
+  if (/\/JavaScript|\/JS\b|\/Launch|\/SubmitForm|\/ImportData|\/RichMedia|\/OpenAction\s*<<[^>]*\/JS/i.test(text)) {
     throw new AppError(415, 'UNSAFE_PDF', 'PDF-Dateien mit eingebetteten Skripten oder Aktionen sind nicht erlaubt.');
   }
 }

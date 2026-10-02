@@ -1,6 +1,7 @@
 import { eq, inArray } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { JOB_PRIORITY, JobWorker, enqueue } from '../src/core/jobs';
+import { sql } from 'drizzle-orm';
+import { JOB_PRIORITY, JobWorker, LockLostError, enqueue } from '../src/core/jobs';
 import { db, schema } from '../src/core/db/client';
 import { uniq } from './helpers';
 
@@ -69,5 +70,61 @@ describe('Job-Queue', () => {
     while (done < 12 && Date.now() - started < 10_000) await new Promise((r) => setTimeout(r, 20));
     await worker.stop();
     expect(done).toBe(12);
+  });
+});
+
+describe('Job-Queue: Sperren und Zwischenstände', () => {
+  it('ein Lauf, dessen Job der Reaper neu vergeben hat, kann den Status nicht mehr überschreiben', async () => {
+    const type = uniq('test.lock');
+    const [row] = await db.insert(schema.jobs).values({ type, payload: {}, priority: 10 }).returning({ id: schema.jobs.id });
+    let runs = 0;
+    const worker = new JobWorker({
+      handlers: {
+        [type]: async () => {
+          runs++;
+          // Simuliert den Reaper: Job gilt als verwaist und wird freigegeben, während dieser Lauf noch arbeitet.
+          if (runs === 1) await db.execute(sql`UPDATE jobs SET status = 'PENDING', locked_by = NULL, locked_at = NULL WHERE id = ${row!.id}`);
+        },
+      } as never,
+    });
+    expect(await worker.drain(1)).toBe(1);
+    const [afterFirst] = await db.select({ status: schema.jobs.status }).from(schema.jobs).where(eq(schema.jobs.id, row!.id));
+    // Der erste Lauf darf den freigegebenen Job nicht auf DONE setzen; der zweite Lauf erledigt ihn.
+    expect(afterFirst!.status).toBe('PENDING');
+    expect(await worker.drain(1)).toBe(1);
+    const [afterSecond] = await db.select({ status: schema.jobs.status, attempts: schema.jobs.attempts }).from(schema.jobs).where(eq(schema.jobs.id, row!.id));
+    expect(afterSecond).toMatchObject({ status: 'DONE', attempts: 2 });
+  });
+
+  it('übergibt den Zwischenstand an die Wiederholung und bricht ab, wenn die Sperre beim Speichern verloren ist', async () => {
+    const type = uniq('test.checkpoint');
+    const [row] = await db.insert(schema.jobs).values({ type, payload: {}, priority: 10, maxAttempts: 3 }).returning({ id: schema.jobs.id });
+    const seen: unknown[] = [];
+    let lockLost: unknown = null;
+    const worker = new JobWorker({
+      handlers: {
+        [type]: async (_payload: unknown, job: { attempts: number; checkpoint: unknown; saveCheckpoint: (d: Record<string, unknown>) => Promise<void> }) => {
+          seen.push(job.checkpoint);
+          if (job.attempts === 1) {
+            await job.saveCheckpoint({ sent: ['a'] });
+            throw new Error('Abbruch nach dem ersten Empfänger');
+          }
+          if (job.attempts === 2) {
+            await db.execute(sql`UPDATE jobs SET locked_by = 'jemand-anderes' WHERE id = ${row!.id}`);
+            await job.saveCheckpoint({ sent: ['a', 'b'] }).catch((e) => (lockLost = e));
+            throw new Error('weiter nach verlorener Sperre');
+          }
+        },
+      } as never,
+    });
+    expect(await worker.drain(1)).toBe(1);
+    await db.execute(sql`UPDATE jobs SET run_at = now() WHERE id = ${row!.id}`);
+    expect(await worker.drain(1)).toBe(1);
+    expect(seen).toEqual([null, { sent: ['a'] }]);
+    expect(lockLost).toBeInstanceOf(LockLostError);
+    const [after] = await db.select({ status: schema.jobs.status, lockedBy: schema.jobs.lockedBy, checkpoint: schema.jobs.checkpoint }).from(schema.jobs).where(eq(schema.jobs.id, row!.id));
+    // Der zweite Lauf hatte die Sperre verloren: Status und Zwischenstand bleiben wie vom neuen Besitzer gesetzt.
+    expect(after).toMatchObject({ status: 'RUNNING', lockedBy: 'jemand-anderes', checkpoint: { sent: ['a'] } });
+    await db.execute(sql`UPDATE jobs SET status = 'DONE' WHERE id = ${row!.id}`);
   });
 });

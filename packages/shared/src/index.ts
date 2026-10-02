@@ -9,3 +9,4 @@ export * from './schemas';
 export * from './photo-quality';
 export * from './geo';
 export * from './format';
+export * from './legal';

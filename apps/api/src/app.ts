@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import { ZodError } from 'zod';
 import { InvalidTransitionError } from '@sd/shared';
-import { config, isAllowedOrigin, rateMax } from './config';
+import { allowedOrigins, config, rateMax } from './config';
 import { AppError, validationError } from './core/errors';
 import { resolveSession, SESSION_COOKIE } from './core/auth';
 import { registerRoutes } from './routes';
@@ -55,7 +55,7 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
     if (!MUTATING.has(req.method)) return;
     const origin = req.headers.origin;
     if (origin) {
-      if (!isAllowedOrigin(origin)) throw new AppError(403, 'BAD_ORIGIN', 'Anfrage von unzulässiger Herkunft.');
+      if (!allowedOrigins.includes(origin)) throw new AppError(403, 'BAD_ORIGIN', 'Anfrage von unzulässiger Herkunft.');
       return;
     }
     if (req.headers['sec-fetch-site'] === 'cross-site') {

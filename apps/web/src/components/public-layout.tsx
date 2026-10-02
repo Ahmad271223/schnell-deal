@@ -21,6 +21,7 @@ export function PublicLayout({ children, wide }: { children: ReactNode; wide?: b
         <Link href="/rechtliches/TERMS" className="mx-2 hover:underline">AGB</Link>
         <Link href="/rechtliches/BIDDER_TERMS" className="mx-2 hover:underline">Bieterbedingungen</Link>
         <Link href="/rechtliches/PRIVACY" className="mx-2 hover:underline">Datenschutz</Link>
+        <Link href="/rechtliches/IMPRINT" className="mx-2 hover:underline">Impressum</Link>
       </footer>
     </div>
   );

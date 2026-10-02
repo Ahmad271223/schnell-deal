@@ -1,7 +1,6 @@
 'use client';
 
-import Link from 'next/link';
-import { Camera, ChevronRight } from 'lucide-react';
+import { Camera } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { INSPECTION_STATUS_LABELS } from '@sd/shared';
 import { api } from '@/lib/api';
@@ -25,7 +24,7 @@ export default function DealershipDashboard() {
         <div className="relative max-w-2xl">
           <p className="text-sm font-medium text-slate-300">Willkommen zurück, {companyName}.</p>
           <h1 className="mt-1.5 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Machen Sie mehr aus Ihren Inzahlungnahmen.</h1>
-          <p className="mt-2.5 text-sm text-slate-300 sm:text-base">Vereinbaren Sie Aufnahmetermine für Ihre Inzahlungnahmen. Unser Team holt die Fahrzeuge bei Ihnen vor Ort ab und bereitet sie professionell für die Auktion auf.</p>
+          <p className="mt-2.5 text-sm text-slate-300 sm:text-base">Melden Sie Ihre Inzahlungnahmen. Unser Außendienst nimmt die Fahrzeuge bei Ihnen vor Ort auf: Fotos, Schäden, Lackmessung, Diagnose. Danach gehen sie in die Auktion.</p>
           <LinkButton href="/autohaus/melden" className="mt-5" size="lg" icon={<Camera className="h-5 w-5" aria-hidden />}>
             Inzahlungnahme melden
           </LinkButton>

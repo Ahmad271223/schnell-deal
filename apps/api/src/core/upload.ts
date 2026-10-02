@@ -7,10 +7,13 @@ export interface ReceivedFile {
   fields: Record<string, string>;
 }
 
-/** Liest genau eine Datei aus einem multipart-Request (Größenlimit greift bereits im Stream). */
-export async function receiveFile(req: FastifyRequest): Promise<ReceivedFile> {
+/**
+ * Liest genau eine Datei aus einem multipart-Request. Das Größenlimit greift bereits im Stream
+ * (Standard MAX_UPLOAD_MB; für Videos per `maxMb` höher).
+ */
+export async function receiveFile(req: FastifyRequest, opts: { maxMb?: number } = {}): Promise<ReceivedFile> {
   if (!req.isMultipart()) throw new AppError(400, 'MULTIPART_REQUIRED', 'Datei-Upload (multipart/form-data) erwartet.');
-  const file = await req.file();
+  const file = await req.file(opts.maxMb ? { limits: { fileSize: opts.maxMb * 1024 * 1024 } } : undefined);
   if (!file) throw new AppError(400, 'FILE_REQUIRED', 'Keine Datei übermittelt.');
   const buffer = await file.toBuffer();
   if (file.file.truncated) throw new AppError(413, 'FILE_TOO_LARGE', 'Die Datei ist zu groß.');

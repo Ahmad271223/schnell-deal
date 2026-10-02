@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, ImageOff, X, ZoomIn, ZoomOut } from 'lucide-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PHOTO_QUALITY_LABELS, PHOTO_SLOT_LABELS, type PhotoQuality, type PhotoSlot } from '@sd/shared';
 import { photoUrl } from '@/lib/api';
-import { StatusBadge } from './ui';
+import { Portal, StatusBadge } from './ui';
 
 export interface GalleryPhoto {
   id: string;
@@ -74,6 +74,7 @@ export function Lightbox({ vehicleId, photos, index, onIndex, onClose }: { vehic
   }, [go, onClose]);
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex flex-col bg-black/95" role="dialog" aria-modal="true" aria-label="Fotoansicht">
       <div className="flex items-center justify-between p-3 text-white">
         <span className="text-sm">
@@ -119,5 +120,6 @@ export function Lightbox({ vehicleId, photos, index, onIndex, onClose }: { vehic
         </button>
       </div>
     </div>
+    </Portal>
   );
 }

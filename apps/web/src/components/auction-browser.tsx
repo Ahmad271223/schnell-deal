@@ -2,14 +2,15 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { BookOpen, Car, Filter, Flame, Gauge, Gavel, Heart, MapPin, Sparkles, X } from 'lucide-react';
+import { BookOpen, Car, ChevronRight, Filter, Flame, Gauge, Gavel, Heart, MapPin, Sparkles, Timer, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BODY_LABELS, BODY_TYPES, FUEL_LABELS, FUEL_TYPES, kwToPs, TRANSMISSION_LABELS, TRANSMISSIONS, formatDateDe, formatKm } from '@sd/shared';
+import { BODY_LABELS, BODY_TYPES, FUEL_LABELS, FUEL_TYPES, kwToPs, TRANSMISSION_LABELS, TRANSMISSIONS, formatDateDe, formatDateTimeDe, formatKm } from '@sd/shared';
 import { api, photoUrl } from '@/lib/api';
 import { formatEuro, parseEuroInput, yearOf } from '@/lib/format';
 import { realtime, useChannel } from '@/lib/realtime';
-import type { AuctionCard } from '@/lib/types';
+import type { AuctionCard, AuctionSummary, DealerCatalog } from '@/lib/types';
+import { CardCarousel, CarouselItem } from './card-carousel';
 import { Countdown } from './countdown';
 import { Button, EmptyState, ErrorAlert, Field, Input, Pagination, Select, Spinner } from './ui';
 
@@ -122,10 +123,10 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
     void qc.invalidateQueries({ queryKey: ['auctions'] });
   };
 
-  const items = q.data?.items ?? [];
-  const now = Date.now();
-  const endingSoon = items.filter((i) => new Date(i.endsAt).getTime() - now < 3_600_000).length;
   const showHero = preset === 'all' && !catalogId;
+  // Kennzahlen über alle sichtbaren Auktionen (nicht nur die aktuelle Seite); nur auf der Startseite nötig.
+  const summary = useQuery({ queryKey: ['auction-summary'], queryFn: () => api<AuctionSummary>('/auctions/summary'), enabled: showHero, refetchInterval: 60_000 });
+  const sm = summary.data;
 
   return (
     <div>
@@ -141,10 +142,11 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
               <h1 className="mt-3 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Top Fahrzeuge. Echte Chancen.</h1>
               <p className="mt-2 text-sm text-slate-300 sm:text-base">Täglich geprüfte Fahrzeuge von Autohäusern. Transparent. Schnell. Verbindlich.</p>
             </div>
-            <div className="flex gap-3">
-              <HeroStat value={items.length} label="Aktive Auktionen" />
-              <HeroStat value={endingSoon} label="Endet < 1 Std." accent />
-              <HeroStat value="100 %" label="Gewerbliche Händler" />
+            <div className="flex flex-wrap gap-3" data-testid="hero-stats">
+              <HeroStat value={sm?.active} label="Aktive Auktionen" />
+              <HeroStat value={sm?.endingSoon} label={`Endet < ${sm?.endingSoonMinutes ?? 15} Min.`} accent />
+              <HeroStat value={sm?.newToday} label="Neu in 24 Std." />
+              <HeroStat value={sm?.myLeading} label="Sie führen" />
             </div>
           </div>
         </section>
@@ -177,6 +179,8 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
           ))}
         </div>
       )}
+
+      {showHero && !filters.q && <HomeRails onFavorite={toggleFavorite} />}
 
       {catalogId && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
@@ -281,7 +285,7 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
           {preset === 'favorites' ? 'Markieren Sie Fahrzeuge mit dem Herz, um sie hier zu beobachten.' : 'Passen Sie die Filter an oder schauen Sie später wieder vorbei.'}
         </EmptyState>
       )}
-      <div className="grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {q.data?.items.map((c, i) => <LiveAuctionCard key={c.id} card={c} index={i} queryKey={key} onFavorite={() => toggleFavorite(c)} />)}
       </div>
       {q.data && (q.data.hasMore || page > 1) && <Pagination page={page} hasMore={q.data.hasMore} onChange={setPage} />}
@@ -289,10 +293,12 @@ export function AuctionBrowser({ preset, title, initialQuery = '', catalogId = n
   );
 }
 
-function HeroStat({ value, label, accent }: { value: number | string; label: string; accent?: boolean }) {
+function HeroStat({ value, label, accent }: { value: number | undefined; label: string; accent?: boolean }) {
   return (
     <div className={clsx('min-w-[104px] rounded-xl border px-4 py-3', accent ? 'border-brand-500/40 bg-brand-600/15' : 'border-white/10 bg-white/5')}>
-      <p className={clsx('font-display text-2xl font-extrabold', accent ? 'text-brand-300' : 'text-white')}>{value}</p>
+      <p className={clsx('tabular font-display text-2xl font-extrabold', accent ? 'text-brand-300' : 'text-white')} aria-busy={value === undefined}>
+        {value === undefined ? '…' : value}
+      </p>
       <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
     </div>
   );
@@ -311,7 +317,7 @@ function statusBadgeFor(card: AuctionCard): { label: string; cls: string; dot: s
   return { label: 'LIVE', cls: 'bg-red-50 text-brand-700 ring-brand-200', dot: 'bg-brand-500', live: true };
 }
 
-function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionCard; index: number; queryKey: unknown[]; onFavorite: () => void }) {
+export function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionCard; index: number; queryKey: unknown[]; onFavorite: () => void }) {
   const qc = useQueryClient();
   const [flash, setFlash] = useState(0);
   useChannel(card.status === 'ACTIVE' || card.status === 'SCHEDULED' ? `auction:${card.id}` : null, (e) => {
@@ -397,5 +403,95 @@ function LiveAuctionCard({ card, index, queryKey, onFavorite }: { card: AuctionC
         </div>
       </Link>
     </article>
+  );
+}
+
+// ---------------------------------------------------------------- Startseite: Reihen zum Wischen
+
+interface RailDef {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: typeof Timer;
+  href: string;
+  qs: string;
+}
+
+const RAILS: RailDef[] = [
+  { id: 'ending', title: 'Endet bald', subtitle: 'Die nächsten Auktionsenden', icon: Timer, href: '/haendler/endet-bald', qs: 'endingWithinHours=3&sort=ending' },
+  { id: 'new', title: 'Neu eingestellt', subtitle: 'In den letzten 24 Stunden gestartet', icon: Sparkles, href: '/haendler/neu', qs: 'newWithinHours=24&sort=newest' },
+  { id: 'favorites', title: 'Ihre Favoriten', subtitle: 'Fahrzeuge, die Sie beobachten', icon: Heart, href: '/haendler/favoriten', qs: 'favorites=1' },
+];
+
+/** Kataloge und drei Auktionsreihen; leere Reihen werden nicht angezeigt (keine Platzhalter). */
+function HomeRails({ onFavorite }: { onFavorite: (card: AuctionCard) => void }) {
+  const catalogs = useQuery({ queryKey: ['dealer-catalogs'], queryFn: () => api<{ items: DealerCatalog[] }>('/catalogs'), refetchInterval: 60_000 });
+  return (
+    <div className="mb-8 space-y-7" data-testid="home-rails">
+      {catalogs.data && catalogs.data.items.length > 0 && (
+        <CardCarousel title="Kataloge" subtitle="Auktionsrunden, für die Sie freigeschaltet sind" icon={BookOpen} testId="rail-catalogs">
+          {catalogs.data.items.map((c) => (
+            <CarouselItem key={c.id} wide>
+              <CatalogCard catalog={c} />
+            </CarouselItem>
+          ))}
+        </CardCarousel>
+      )}
+      {RAILS.map((r) => (
+        <AuctionRail key={r.id} rail={r} onFavorite={onFavorite} />
+      ))}
+    </div>
+  );
+}
+
+function AuctionRail({ rail, onFavorite }: { rail: RailDef; onFavorite: (card: AuctionCard) => void }) {
+  const key = ['auctions', `rail-${rail.id}`];
+  const q = useQuery({ queryKey: key, queryFn: () => api<{ items: AuctionCard[] }>(`/auctions?${rail.qs}`) });
+  const items = (q.data?.items ?? []).slice(0, 12);
+  if (items.length === 0) return null;
+  return (
+    <CardCarousel
+      title={rail.title}
+      subtitle={rail.subtitle}
+      icon={rail.icon}
+      testId={`rail-${rail.id}`}
+      action={
+        <Link href={rail.href} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-brand-700 hover:underline">
+          Alle anzeigen <ChevronRight className="h-4 w-4" aria-hidden />
+        </Link>
+      }
+    >
+      {items.map((c, i) => (
+        <CarouselItem key={c.id}>
+          <LiveAuctionCard card={c} index={i} queryKey={key} onFavorite={() => onFavorite(c)} />
+        </CarouselItem>
+      ))}
+    </CardCarousel>
+  );
+}
+
+/** Katalogkarte („Showroom“): Titelbild der zuerst endenden Auktion, Fahrzeugzahl und erstes Auktionsende. */
+function CatalogCard({ catalog: c }: { catalog: DealerCatalog }) {
+  return (
+    <Link
+      href={`/haendler?katalog=${c.id}`}
+      className="group relative block aspect-[16/10] overflow-hidden rounded-2xl bg-slate-900 text-white shadow-sm ring-1 ring-black/5 transition-shadow hover:shadow-lg"
+      data-testid={`catalog-card-${c.id}`}
+    >
+      {c.cover ? (
+        <img src={photoUrl(c.cover.vehicleId, c.cover.photoId, 'web')} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" aria-hidden />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/5" aria-hidden />
+      <div className="absolute inset-x-0 bottom-0 p-4">
+        <p className="font-display text-[17px] font-bold leading-tight">{c.name}</p>
+        <p className="mt-1 text-[13px] text-white/85">
+          {c.vehicleCount} Fahrzeug{c.vehicleCount === 1 ? '' : 'e'}
+          {c.activeCount < c.vehicleCount && ` · ${c.activeCount} laufend`}
+        </p>
+        {c.firstEndsAt && <p className="text-[13px] text-white/85">Endet ab {formatDateTimeDe(c.firstEndsAt)}</p>}
+      </div>
+    </Link>
   );
 }

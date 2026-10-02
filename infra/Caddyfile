@@ -1,5 +1,6 @@
 # Reverse-Proxy für staging/production (automatisches HTTPS via Let's Encrypt).
-# SITE_ADDRESS=auktion.example.de, STORAGE_ADDRESS=storage.example.de (nur bei MinIO statt R2/S3)
+# SITE_ADDRESS=auktion.example.de. Der Objektspeicher (S3, R2, Hetzner Object Storage) ist extern und braucht hier
+# keinen Eintrag; nur mit eingebautem MinIO wird infra/Caddyfile.minio verwendet (CADDYFILE in der .env).
 {$SITE_ADDRESS} {
 	encode zstd gzip
 	header {
@@ -18,9 +19,4 @@
 	handle {
 		reverse_proxy web:3000
 	}
-}
-
-# Optional: MinIO für signierte Download-URLs öffentlich erreichbar machen (S3_PUBLIC_ENDPOINT=https://{$STORAGE_ADDRESS})
-{$STORAGE_ADDRESS:storage.localhost} {
-	reverse_proxy minio:9000
 }

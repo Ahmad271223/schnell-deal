@@ -247,4 +247,34 @@ export interface DealerAuctionDetail {
   isFavorite: boolean;
   catalog: AuctionCatalogContext | null;
   contact: { name: string; email: string | null; phone: string | null };
+  /** Vom Betreiber in den Einstellungen gepflegter Hinweistext; null = kein Abschnitt. */
+  notice: string | null;
+}
+
+/** Kennzahlen der Händler-Startseite (über alle sichtbaren Auktionen, nicht nur die aktuelle Seite). */
+export interface AuctionSummary {
+  active: number;
+  scheduled: number;
+  endingSoon: number;
+  newToday: number;
+  catalogs: number;
+  myLeading: number;
+  myOutbid: number;
+  watched: number;
+  endingSoonMinutes: number;
+  serverNow: string;
+}
+
+/** Katalog („Showroom“) aus Händlersicht: Zahlen beziehen sich auf die für den Händler sichtbaren Auktionen. */
+export interface DealerCatalog {
+  id: string;
+  name: string;
+  description: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  vehicleCount: number;
+  activeCount: number;
+  firstEndsAt: string | null;
+  lastEndsAt: string | null;
+  cover: { vehicleId: string; photoId: string } | null;
 }

@@ -48,10 +48,18 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v || undefined),
   ANTHROPIC_MODEL: z.string().default('claude-fable-5-1'),
+  /** Günstigeres Modell für die einfache Bildausschnitt-Prüfung; leer = ANTHROPIC_MODEL. Kostenrechnung in docs/12. */
+  ANTHROPIC_MODEL_PHOTO_CHECK: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || undefined),
   /** Außenaufnahmen per KI auf „Fahrzeug vollständig im Bild“ prüfen (nur mit API-Schlüssel). */
   AI_PHOTO_CHECK: bool.default('true'),
   CLAMAV_PORT: z.coerce.number().default(3310),
   MAX_UPLOAD_MB: z.coerce.number().default(25),
+  /** Motorvideo. Obergrenze 100 MB: clamd scannt Datenströme standardmäßig nur bis StreamMaxLength (100 MB). */
+  MAX_VIDEO_UPLOAD_MB: z.coerce.number().min(1).max(100).default(100),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:admin@schnell-deal.local'),
@@ -73,22 +81,33 @@ function load(): Config {
     console.error('COOKIE_SECURE muss in staging/production aktiviert sein.');
     process.exit(1);
   }
+  // Platzhalter aus den Vorlagen und Entwicklungs-Standardwerte dürfen nicht in den echten Betrieb gelangen.
+  const problems = productionConfigProblems(cfg);
+  if (problems.length) {
+    if (cfg.NODE_ENV === 'production') {
+      console.error('Produktionskonfiguration unvollständig:\n- ' + problems.join('\n- '));
+      process.exit(1);
+    }
+    if (cfg.NODE_ENV === 'staging') console.warn('Hinweis (staging): ' + problems.join(' | '));
+  }
   return cfg;
+}
+
+const PLACEHOLDERS = new Set(['ersetzen', 'schnelldeal', 'schnelldeal-secret', 'minioadmin', 'changeme', '']);
+
+/** Prüfungen, die in Produktion den Start verhindern (Entwicklungs- und Platzhalterwerte). */
+export function productionConfigProblems(cfg: Config): string[] {
+  const out: string[] = [];
+  if (!cfg.CLAMAV_HOST) out.push('CLAMAV_HOST fehlt (Virenscanner ist Pflicht, §44).');
+  if (PLACEHOLDERS.has(cfg.S3_ACCESS_KEY.trim().toLowerCase()) || PLACEHOLDERS.has(cfg.S3_SECRET_KEY.trim().toLowerCase())) out.push('S3_ACCESS_KEY/S3_SECRET_KEY sind Platzhalter oder Entwicklungswerte.');
+  if (/:schnelldeal@/.test(cfg.DATABASE_URL)) out.push('DATABASE_URL verwendet das Entwicklungs-Passwort.');
+  if (cfg.SMTP_HOST === 'localhost' || PLACEHOLDERS.has((cfg.SMTP_USER ?? '').trim().toLowerCase()) || PLACEHOLDERS.has((cfg.SMTP_PASS ?? '').trim().toLowerCase())) out.push('SMTP_HOST/SMTP_USER/SMTP_PASS sind nicht gesetzt oder Platzhalter.');
+  if (/example\.de|localhost/.test(cfg.ALLOWED_ORIGINS) || /example\.de|localhost/.test(cfg.PUBLIC_WEB_URL)) out.push('ALLOWED_ORIGINS/PUBLIC_WEB_URL zeigen auf example.de oder localhost.');
+  if (cfg.S3_PUBLIC_ENDPOINT && /example\.de/.test(cfg.S3_PUBLIC_ENDPOINT)) out.push('S3_PUBLIC_ENDPOINT zeigt auf example.de.');
+  return out;
 }
 
 export const config = load();
 export const allowedOrigins = config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
-/** Emergent-Preview-Domains: der Ingress schreibt den Origin-Header auf wechselnde interne Hosts um. */
-const PREVIEW_HOST_SUFFIXES = ['.preview.emergentagent.com', '.preview.emergentcf.cloud', '.emergent.host'];
-/** Erlaubte Herkunft für CSRF/WebSocket: konfigurierte Origins oder eine Emergent-Preview-Domain. */
-export const isAllowedOrigin = (origin: string): boolean => {
-  if (allowedOrigins.includes(origin)) return true;
-  try {
-    const host = new URL(origin).hostname;
-    return PREVIEW_HOST_SUFFIXES.some((s) => host.endsWith(s));
-  } catch {
-    return false;
-  }
-};
 /** Obergrenze einer Ratenbegrenzung; mit RATE_LIMIT_DISABLED (nur Tests und Lasttest) praktisch unbegrenzt. */
 export const rateMax = (max: number): number => (config.RATE_LIMIT_DISABLED ? 1_000_000 : max);

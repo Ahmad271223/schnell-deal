@@ -5,7 +5,8 @@ import { AppError } from './errors';
 
 /*
  * Bildverstehen mit Claude (Anthropic Messages API):
- *  - FIN von einem Foto ablesen (Typenschild, Windschutzscheibe, Fahrzeugschein).
+ *  - FIN von einem Foto der FIN-Plakette ablesen (Typenschild, Türholm, Windschutzscheibe). Der Außendienst wird angewiesen,
+ *    nicht den Fahrzeugschein zu fotografieren (Halterdaten); landet trotzdem einer im Bild, wird nur die FIN gelesen.
  *  - Prüfen, ob das Fahrzeug auf einer Außenaufnahme vollständig im Bild ist (Spezifikation §11).
  *
  * Grundsätze: Die KI liefert nur Vorschläge. Die FIN speichert ausschließlich der Mitarbeiter nach Prüfung;
@@ -70,10 +71,10 @@ async function prepareImage(buf: Buffer): Promise<string> {
   }
 }
 
-async function askWithTool<T extends Record<string, unknown>>(system: string, instruction: string, image: Buffer, tool: { name: string; description: string; input_schema: Record<string, unknown> }): Promise<T> {
+async function askWithTool<T extends Record<string, unknown>>(system: string, instruction: string, image: Buffer, tool: { name: string; description: string; input_schema: Record<string, unknown> }, model = config.ANTHROPIC_MODEL): Promise<T> {
   const data = await prepareImage(image);
   const res = await transport({
-    model: config.ANTHROPIC_MODEL,
+    model,
     max_tokens: 400,
     system,
     tools: [tool],
@@ -135,7 +136,7 @@ const VIN_TOOL = {
 
 export async function recognizeVinFromImage(image: Buffer): Promise<VinRecognition> {
   const r = await askWithTool<{ readable: boolean; vin: string; confidence: 'high' | 'medium' | 'low'; uncertain_positions?: number[]; notes?: string }>(
-    'Du liest Fahrzeug-Identifizierungsnummern (FIN/VIN) von Fotos ab: Typenschild, Aufkleber im Türrahmen, Windschutzscheibe oder Fahrzeugschein. Eine FIN hat genau 17 Zeichen aus Buchstaben und Ziffern; die Buchstaben I, O und Q kommen nie vor (lies sie als 1, 0, 0). Erfinde keine Zeichen. Wenn ein Zeichen unsicher ist, nenne seine Position in uncertain_positions und senke confidence. Antworte ausschließlich über das Werkzeug report_vin.',
+    'Du liest Fahrzeug-Identifizierungsnummern (FIN/VIN) von Fotos der FIN-Plakette am Fahrzeug ab: Typenschild, Aufkleber im Türrahmen oder Windschutzscheibe. Lies ausschließlich die FIN; alle anderen Angaben im Bild (Namen, Anschriften, Kennzeichen) ignorierst du und gibst sie nicht wieder. Eine FIN hat genau 17 Zeichen aus Buchstaben und Ziffern; die Buchstaben I, O und Q kommen nie vor (lies sie als 1, 0, 0). Erfinde keine Zeichen. Wenn ein Zeichen unsicher ist, nenne seine Position in uncertain_positions und senke confidence. Antworte ausschließlich über das Werkzeug report_vin.',
     'Lies die FIN auf diesem Foto ab.',
     image,
     VIN_TOOL,
@@ -187,12 +188,16 @@ const FRAMING_TOOL = {
   },
 };
 
+/** Modell für die Bildausschnitt-Prüfung (günstiger wählbar). */
+const framingModel = () => config.ANTHROPIC_MODEL_PHOTO_CHECK ?? config.ANTHROPIC_MODEL;
+
 export async function checkVehicleFraming(image: Buffer): Promise<FramingCheck> {
   const r = await askWithTool<{ vehicle_present: boolean; fully_visible: boolean; cut_off_sides?: string[]; confidence: 'high' | 'medium' | 'low'; notes?: string }>(
     'Du prüfst Außenaufnahmen für eine Fahrzeugakte. Melde, ob ein Fahrzeug das Hauptmotiv ist und ob es vollständig im Bild liegt. Vollständig bedeutet: keine Karosserieteile, Räder oder Spiegel sind vom Bildrand abgeschnitten. Bewerte keine Schäden und keinen Zustand. Antworte ausschließlich über das Werkzeug report_vehicle_framing.',
     'Ist das Fahrzeug auf diesem Foto vollständig im Bild?',
     image,
     FRAMING_TOOL,
+    framingModel(),
   );
   const confidence = (['high', 'medium', 'low'] as const).includes(r.confidence) ? r.confidence : 'low';
   return {
@@ -201,6 +206,6 @@ export async function checkVehicleFraming(image: Buffer): Promise<FramingCheck> 
     cutOff: Array.isArray(r.cut_off_sides) ? r.cut_off_sides.filter((s): s is string => typeof s === 'string').slice(0, 4) : [],
     confidence,
     notes: r.notes ? String(r.notes).slice(0, 300) : null,
-    model: config.ANTHROPIC_MODEL,
+    model: framingModel(),
   };
 }

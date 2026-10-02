@@ -82,6 +82,10 @@ Jede Phase endet mit: `pnpm typecheck` · `pnpm lint` · `pnpm test` (Unit + Int
 | pg-boss als Job-Queue | Eigene Queue in der Tabelle `jobs` (`FOR UPDATE SKIP LOCKED`, Prioritäten, Backoff, Reaper) | Jobs entstehen in derselben Transaktion wie die fachliche Änderung; volle Kontrolle über Prioritäten. Der Lasttest zeigte, dass Deal-PDFs ohne Prioritäten hinter einem E-Mail-Rückstau warten. |
 | bcrypt (Kosten 12, reines JavaScript) | PBKDF2-HMAC-SHA256, 600.000 Iterationen, im libuv-Threadpool; ältere bcrypt-Hashes werden beim Login ersetzt | Der Lasttest zeigte, dass 100 gleichzeitige Logins die Ereignisschleife rund 50 s blockierten und damit auch Gebote verzögert hätten. Mit PBKDF2 dauern sie 5,5 s, ohne andere Anfragen zu blockieren. |
 | Ein Abfrageintervall für den Worker | Nach jedem fertigen Job wird sofort der nächste geholt | Ein Rückstau (z. B. Überboten-E-Mails) wird ohne Wartezeit abgearbeitet. |
+| Lokaler Dateispeicher (von einem externen Werkzeug eingeführt) | Verworfen, S3-kompatibler privater Objektspeicher bleibt | Ein Dateisystem im Container ist nicht gesichert, nicht skalierbar und nicht in den Backup-Prozess eingebunden (§45, §46). |
+| Motorvideo mit Transkodierung (ffmpeg) | Ohne Transkodierung: Smartphone-Datei wird geprüft (Magic Bytes, Virenscan, 100 MB) und unverändert gespeichert | Browser spielen MP4/H.264 und WebM direkt; eine Transkodierung käme erst bei HEVC-Problemen dazu und wird im Staging-Durchlauf mit echten Geräten entschieden. |
+| Reiter auf der Auktionsseite | One-Pager mit gestapelten Karten, Medien-Umschalter, Wischen und Klebeleiste | Vorlage des Auftraggebers (Screenshots vom 02.10.2026); alle Werte stammen weiterhin aus der Fahrzeugakte, nichts wird ergänzt oder geschätzt. |
+| Händler-Startseite als reines Raster | Kennzahlen, Katalogkarten und Reihen zum Wischen über eigene Endpunkte (`/auctions/summary`, `/catalogs`) | Zahlen nur aus Datenbankwerten (§64); die zuvor eingebaute feste Angabe „100 % gewerbliche Händler“ wurde entfernt. |
 
 ## Bewusst nicht automatisiert
 

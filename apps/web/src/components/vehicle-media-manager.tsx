@@ -100,7 +100,6 @@ export function VehicleMediaManager({ file, onChange }: { file: VehicleFile; onC
       <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
         {photos.map((p) => (
           <li key={p.id} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={photoUrl(vehicleId, p.id, 'thumb')} alt={PHOTO_SLOT_LABELS[p.slot]} loading="lazy" className="aspect-[4/3] w-full object-cover" />
             <button onClick={() => deletePhoto(p.id)} className="absolute right-1 top-1 rounded-md bg-black/60 p-1.5 text-white opacity-0 transition-opacity hover:bg-brand-600 group-hover:opacity-100" aria-label="Foto löschen" data-testid={`media-delete-${p.id}`}>
               <Trash2 className="h-3.5 w-3.5" />

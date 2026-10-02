@@ -254,6 +254,13 @@ function SidebarContent({ area, me, pathname, onClose }: { area: Area; me: Me; p
             <p className="truncate text-xs text-slate-400">{AREA_ROLE[area]}</p>
           </div>
         </div>
+        <p className="mt-3 text-[11px] text-slate-500">
+          <Link href="/rechtliches/IMPRINT" className="hover:text-slate-300">Impressum</Link>
+          <span aria-hidden> · </span>
+          <Link href="/rechtliches/PRIVACY" className="hover:text-slate-300">Datenschutz</Link>
+          <span aria-hidden> · </span>
+          <Link href="/rechtliches/TERMS" className="hover:text-slate-300">AGB</Link>
+        </p>
       </div>
     </>
   );

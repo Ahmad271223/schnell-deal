@@ -8,7 +8,7 @@ Legende: **erfüllt** = automatisiert nachgewiesen · **vorbereitet** = umgesetz
 | 2 | Admin kann Gewerbenachweis prüfen und freigeben | erfüllt | E2E Schritt 2 (Nachweis sichtbar, Freigabe); Integrationstest „kompletter Ablauf …“ |
 | 3 | Autohaus kann Inzahlungnahme-Anfrage absenden | erfüllt | E2E Schritt 3; `phase2-inspections.test.ts` |
 | 4 | Admin kann Mitarbeiter disponieren | erfüllt | E2E Schritt 4 (Mitarbeiter anlegen, zuweisen, Statustext beim Autohaus); Phase-2-Tests inkl. Umdisposition |
-| 5 | Mitarbeiter kann unterwegs Fahrzeug vollständig aufnehmen | erfüllt | E2E Schritt 5 (mobiles Viewport, 13 Schritte, 28 Pflichtfotos, Schaden, Lack, Reifen, Funktionen); Phase-3-Tests |
+| 5 | Mitarbeiter kann unterwegs Fahrzeug vollständig aufnehmen | erfüllt | E2E Schritt 5 (mobiles Viewport, 14 Schritte, 28 Pflichtfotos, Schaden, Lack, Reifen, Funktionen, Motorvideo); Phase-3-Tests, `media.test.ts` |
 | 6 | Upload bei schlechter Verbindung wird wieder aufgenommen | erfüllt (Logik) | IndexedDB-Warteschlange mit automatischer Wiederaufnahme und idempotenten Client-IDs (`apps/web/src/lib/outbox.ts`); serverseitige Idempotenz getestet (doppelte `clientUploadId`, `clientVehicleId`, Schaden-/OBD-Client-IDs) |
 | 7 | Admin kann Fahrzeug kontrollieren | erfüllt | E2E Schritt 6; Phase-3-Test „Abschluss sperrt die Akte, Admin weist zurück, Korrektur, Freigabe“ |
 | 8 | Admin kann Auktion planen | erfüllt | E2E Schritt 6 (Formular); Phase-4-Tests |
@@ -29,19 +29,19 @@ Legende: **erfüllt** = automatisiert nachgewiesen · **vorbereitet** = umgesetz
 
 ## Testlauf
 
-Stand 02.10.2026, lokale Windows-Umgebung (Node 24, Postgres 16 und MinIO in Docker), finaler Code-Stand.
+Stand 02.10.2026 (nachts), lokale Windows-Umgebung (Node 24, Postgres 16 und MinIO in Docker), finaler Code-Stand nach Übernahme der fremden Commits, Motorvideo, One-Pager, Startseite und den Härtungen aus der Livegang-Prüfung.
 
 | Prüfung | Befehl | Ergebnis |
 |---|---|---|
 | Typecheck aller Pakete (shared, api, web, e2e) | `pnpm typecheck` | ohne Fehler |
 | Lint | `pnpm lint` | ohne Befund |
-| Unit-Tests | `pnpm --filter @sd/shared test` | 38 von 38 bestanden |
-| Integrationstests (11 Dateien, inkl. KI-Bilderkennung mit nachgebautem Dienst) | `pnpm --filter @sd/api test` | 107 von 107 bestanden, 3 übersprungen (Scanner-Live-Test ohne Scanner) |
+| Unit-Tests | `pnpm --filter @sd/shared test` | 39 von 39 bestanden |
+| Integrationstests (14 Dateien, inkl. KI-Bilderkennung mit nachgebautem Dienst, Motorvideo, Händler-Startseite, Livegang-Schutz) | `pnpm --filter @sd/api test` | 117 von 117 bestanden, 3 übersprungen (Scanner-Live-Test ohne Scanner) |
 | Virenscanner live (echter clamd, EICAR) | `CLAMAV_HOST=localhost … vitest run test/clamav-live.test.ts` | 3 von 3 bestanden |
 | Point-in-Time-Recovery (Basissicherung + WAL bis Zeitpunkt T) | `bash scripts/pitr-restore-test.sh` | bestanden: Stand zu T enthält „before“, nicht „after“ |
 | Backup-Container mit Kopie außer Haus (rclone → S3-kompatibler Bucket) | `docker compose --profile app run … backup /backup.sh --base` | bestanden: Dump, Prüfsumme, WAL-Archiv und Basissicherungen im Bucket |
 | Concurrency-Tests | `pnpm test:concurrency` | 7 von 7 bestanden |
-| E2E-Gesamtablauf inkl. Auktionsseite | `pnpm test:e2e` | bestanden (Testdauer 2,4 min) |
+| E2E-Gesamtablauf inkl. Motorvideo, Startseite und One-Pager | `pnpm test:e2e` | bestanden (Testdauer 2,4 min) |
 | Lasttest | `pnpm loadtest` | bestanden, alle Invarianten und Plausibilitätsprüfungen erfüllt (`docs/lasttest-ergebnis.md`) |
 | Backup und Wiederherstellung | `pnpm backup && pnpm restore-test` | bestanden (Dump eingespielt, Zeilenzahlen und Schutz-Trigger identisch) |
 | Abhängigkeiten | `pnpm audit --prod` | keine bekannten Schwachstellen |
@@ -76,6 +76,24 @@ Lasttest-Kernwerte:
 - **Virenscanner** (§44) als Compose-Dienst, live getestet.
 - **Backups** (§46): WAL-Archivierung, wöchentliche Basissicherung, getestete Zeitpunkt-Wiederherstellung, Kopie außer Haus per rclone.
 - **Stiller Hänger im Concurrency-Test:** In einem von vier Läufen blieb ein Scheduler-Takt ohne Fehlermeldung hängen (keine Deadlocks oder Fehler im Postgres-Log; Verdacht: abgerissene Datenbankverbindung über die Docker-Desktop-Portweiterleitung). Folgetests scheiterten irreführend, weil der blockierte Takt still übersprungen wurde. Behoben durch Zeitlimits für Verbindungen und Abfragen, TCP-Keepalive, `idle_in_transaction_session_timeout`, einen Wächter im Scheduler (Protokoll, Health-Endpunkt, Admin-Systemstatus) und klare Abbrüche in den Tests statt stummem Warten.
+
+### Nachträglich ergänzt (02.10.2026, zweiter Teil: fremde Änderungen, Motorvideo, One-Pager, Startseite)
+
+**Prüfung von 11 fremden Commits.** Ein externes Werkzeug (Emergent) hatte direkt auf `main` gepusht. Übernommen nach Prüfung: einheitliches Layout mit dunkler Seitenleiste, Live-Feinschliff im Bietpanel (Gewinner-Banner, Sniping-Hinweis, Verbindungs-Hinweis), Motorvideo-Spalten, Admin-Fotonachreichung, PDF-Branding (Logo, Bankverbindung), Demo-Skript für Auktionen. Zurückgebaut, weil sie der Spezifikation widersprachen: Objektspeicher auf lokales Dateisystem (§45, Backups), eigene Download-Route mit HMAC-Token, Origin-Prüfung mit Fremd-Domains (CSRF), still übersteuerte Fotoqualität (§11), erfundener Hinweistext mit Haftungsausschluss (§61), feste Zahl „100 % gewerbliche Händler“ im Kopfbereich (§64). Entfernt: Postgres-Datenverzeichnis (83 MB, 2.111 Dateien), Platzhalter-Binärdateien, hochgeladene Dateien, Test-Zugangsdaten, fremde Git-Identität und Supervisor-Dateien; Python-Tests, die nur gegen jene Umgebung liefen.
+
+**Motorvideo** (Schritt 13 der Aufnahme, optional): Außendienst nimmt es mit dem Smartphone auf oder wählt es aus der Galerie, Upload über die Warteschlange (offlinefähig); Admin kann es nachreichen oder entfernen. Prüfung per Magic Bytes, Virenscan, eigenes Größenlimit (höchstens 100 MB wegen clamd). Händler sehen es im Medien-Umschalter der Auktionsseite, der Admin in der Prüfansicht.
+
+**Auktionsseite als One-Pager** nach den Screenshots des Auftraggebers: Medien-Umschalter (Alle Bilder, Zustandsbilder, Dokumente, Motorvideo), Wischen auf dem Hauptbild, Fahrzeugdaten in Gruppen, Zustandskacheln mit echten Zählwerten, Schäden mit Skizze, Reitern je Schaden und Detailfotos, Lackraster, Dokumentenstatus je Dokumentart, Standortkarte, Hinweistext des Betreibers aus den Einstellungen; auf Smartphones eine Milchglas-Leiste mit Preis, Restzeit und „Zum Gebot“.
+
+**Händler-Startseite**: Kennzahlen über alle sichtbaren Auktionen (`/auctions/summary`), Katalogkarten (`/catalogs`) und Reihen zum Wischen (Endet bald, Neu eingestellt, Favoriten) mit Scroll-Snap; leere Reihen erscheinen nicht.
+
+**Unabhängige Livegang-Prüfung** (sieben Prüfdimensionen, schwere Befunde adversarial gegengeprüft): Ergebnis und Stand der Behebung in `11-livegang-checkliste.md`, Abschnitt E. Sofort behoben: Impressum als Rechtstext-Art mit öffentlicher Seite, Sperre für Auktionen in Produktion bei Vorlagen-Rechtstexten, MinIO/Mailpit nur noch im Entwicklungsprofil, restart-Policies und Log-Rotation, Startprüfung auf Platzhalterwerte, `media-src` in der CSP (Motorvideo), Pflichtvariable für die Speicher-Adresse im Build, Objektspeicher in der Kopie außer Haus, Alarm-Webhook bei Backup-Fehlern, keine internen Fehlertexte im Health-Endpunkt, Datenerhalt bei Nachlade-Fehlern, KI-Prompt ohne Fahrzeugschein-Hinweis, keine optionale Ausweiskopie mehr. Die E2E-Läufe deckten dabei zwei Folgefehler der fremden Änderungen auf (Linktext und Kartenrundung) und einen eigenen: Der Bestätigungsdialog lag im Stacking-Kontext der klebenden Seitenspalte und wurde vom Schadenfoto überdeckt; Dialoge und Vollbild werden jetzt per Portal unter `<body>` gerendert.
+
+**Gefunden und behoben:** In Abfragen über eine einzige Tabelle ließ Drizzle den Tabellennamen weg, sodass ein unqualifiziertes `"id"` in `EXISTS (SELECT … FROM bids b WHERE b.auction_id = "id")` an `bids.id` band. Folge: Beendete Auktionen waren für unterlegene Mitbieter in Ein-Tabellen-Abfragen (Watchlist, Fotoabruf) nicht sichtbar, und der neue Zähler „beobachtet“ zählte alle Auktionen. Alle Unterabfragen qualifizieren die Spalten jetzt ausdrücklich; Regressionstests in `media.test.ts` und `dealer-home.test.ts`.
+
+### Bildschirmfotos (aus dem E2E-Lauf, echte Daten)
+
+`docs/screenshots/startseite-1536.png` und `startseite-390.png` (Händler-Startseite mit Kennzahlen, Katalogkarte und Reihen zum Wischen), `auktionsseite-1536.png`, `auktionsseite-1536-komplett.png` (gesamter One-Pager), `auktionsseite-ueberboten-1536.png` (Live-Bietpanel nach Überbieten) und `auktionsseite-390.png` (Smartphone mit Klebeleiste). Die Fotos sind Testbilder (Schachbrettmuster), alle Werte stammen aus der Testdatenbank.
 
 ### Beobachtung in der Testumgebung
 

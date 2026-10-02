@@ -58,6 +58,7 @@ function FeesTab() {
       bankName: s.bankName ?? '',
       iban: s.iban ?? '',
       bic: s.bic ?? '',
+      auctionNotice: s.auctionNotice ?? '',
     });
   }, [q.data]);
   const set = (k: string) => (e: { target: { value: string } }) => setV((o) => ({ ...o, [k]: e.target.value }));
@@ -88,6 +89,7 @@ function FeesTab() {
           bankName: (v.bankName ?? '').trim(),
           iban: (v.iban ?? '').trim(),
           bic: (v.bic ?? '').trim(),
+          auctionNotice: (v.auctionNotice ?? '').trim(),
         },
       });
       setSaved(true);
@@ -120,6 +122,9 @@ function FeesTab() {
           <Field label="Support-E-Mail (Kontakt auf der Auktionsseite)" hint="Leer lassen, um keinen Kontakt anzuzeigen." className="sm:col-span-2"><Input type="email" value={v.supportEmail ?? ''} onChange={set('supportEmail')} /></Field>
           <Field label="Support-Telefon" className="sm:col-span-2"><Input type="tel" value={v.supportPhone ?? ''} onChange={set('supportPhone')} /></Field>
           <Field label="Zahlungsinformationen (Käufer-PDF)" className="sm:col-span-2 lg:col-span-4"><Textarea value={v.paymentInstructions ?? ''} onChange={set('paymentInstructions')} rows={3} /></Field>
+          <Field label="Hinweis unter jeder Auktion" hint="Erscheint als Abschnitt „Hinweise des Betreibers“ auf der Auktionsseite. Kein Ersatz für Rechtstexte." className="sm:col-span-2 lg:col-span-4">
+            <Textarea value={v.auctionNotice ?? ''} onChange={set('auctionNotice')} rows={3} data-testid="settings-auction-notice" />
+          </Field>
           <Field label="Bank (PDF)"><Input value={v.bankName ?? ''} onChange={set('bankName')} placeholder="z. B. Sparkasse Hannover" data-testid="settings-bank-name" /></Field>
           <Field label="IBAN (PDF)"><Input value={v.iban ?? ''} onChange={set('iban')} placeholder="DE00 0000 0000 0000 0000 00" data-testid="settings-iban" /></Field>
           <Field label="BIC (PDF)"><Input value={v.bic ?? ''} onChange={set('bic')} placeholder="XXXXDEXXXXX" data-testid="settings-bic" /></Field>
@@ -188,7 +193,6 @@ function LogoUploader({ logoKey, superadmin, onChange }: { logoKey: string; supe
       <div className="mt-3 flex flex-wrap items-center gap-4">
         <div className="flex h-16 w-40 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50">
           {logoKey ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={`/api/v1/admin/settings/logo/file?v=${bust}`} alt="Logo" className="max-h-full max-w-full object-contain" data-testid="branding-logo-preview" />
           ) : (
             <span className="text-xs text-slate-400">Kein Logo</span>
@@ -354,6 +358,9 @@ interface SystemStatus {
   failedJobs: { id: number; type: string; attempts: number; lastError: string | null; createdAt: string; payload: unknown }[];
   overduePending: number;
   malwareScan: 'clamav' | 'disabled';
+  legalTemplates: LegalKind[];
+  legalEnforced: boolean;
+  environment: string;
   scheduler: { enabled: boolean; lastTickAt: string | null; lastError: string | null; tickRunningSince: string | null };
   serverTime: string;
 }
@@ -385,6 +392,17 @@ function SystemTab() {
             <Card>
               <p className="text-xs uppercase text-slate-500">Virenscan Uploads</p>
               {q.data.malwareScan === 'clamav' ? <StatusBadge label="ClamAV aktiv" tone="success" /> : <StatusBadge label="nicht konfiguriert" tone="warning" />}
+            </Card>
+            <Card>
+              <p className="text-xs uppercase text-slate-500">Rechtstexte ({q.data.environment})</p>
+              {q.data.legalTemplates.length === 0 ? (
+                <StatusBadge label="alle Arten veröffentlicht" tone="success" />
+              ) : (
+                <StatusBadge label={`Vorlagen: ${q.data.legalTemplates.map((k) => LEGAL_KIND_LABELS[k]).join(', ')}`} tone={q.data.legalEnforced ? 'danger' : 'warning'} />
+              )}
+              <p className="mt-1 text-xs text-slate-500">
+                {q.data.legalEnforced ? 'In Produktion werden Auktionen erst eingeplant, wenn keine Vorlage mehr aktiv ist.' : 'In Produktion sperren Vorlagen das Einplanen von Auktionen (§61).'}
+              </p>
             </Card>
             <Card>
               <p className="text-xs uppercase text-slate-500">Auktionstakt (diese Instanz)</p>

@@ -15,6 +15,7 @@ Stand: umgesetzte Beta. Abweichungen gegenüber der ursprünglichen Planung sind
 | Queue/Worker | Eigene Job-Queue in Postgres (Tabelle `jobs`, `FOR UPDATE SKIP LOCKED`) | keine zusätzliche Infrastruktur; Jobs entstehen in derselben Transaktion wie die fachliche Änderung; Prioritäten (Deal-PDFs und Fotos vor Benachrichtigungen), Retry mit Backoff, Reaper für abgebrochene Jobs, Admin-Alarm bei endgültigem Fehlschlag |
 | Storage | S3-kompatibel (MinIO dev, S3/R2 prod), private Buckets, Signed URLs (5 min) | keine vorhersehbaren öffentlichen URLs; Original + Web + Thumbnail getrennt |
 | Bilder | `sharp` im Worker | Web-Version + Thumbnail ohne EXIF/GPS, Qualitätsmetriken (Schärfe/Helligkeit) |
+| Motorvideo | Smartphone-Datei (MP4/WebM/MOV) ohne Umkodierung im privaten Objektspeicher, höchstens 100 MB, Virenscan, Auslieferung per Signed URL nur mit Fahrzeugberechtigung | kein ffmpeg im Betrieb nötig; Browser spielen die Formate direkt |
 | PDF | `pdfkit` + `qrcode` im Worker | versionierte Dokumente (Käufer, Verkäufer, intern), alte Versionen bleiben erhalten |
 | E-Mail | nodemailer (SMTP mit wiederverwendeten Verbindungen; Mailpit in dev) über die Queue | Ausfall → Retry statt stiller Fehler |
 | KI-Bilderkennung | Anthropic Messages API (Claude) mit erzwungenen Werkzeugantworten: FIN vom Foto, „Fahrzeug vollständig im Bild“ | nur Vorschläge, serverseitig validiert; ohne API-Schlüssel abgeschaltet |

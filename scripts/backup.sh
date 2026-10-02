@@ -15,6 +15,8 @@
 #   USE_DOCKER=1                                 Befehle im Compose-Container "postgres" ausführen (Standard, wenn pg_dump fehlt)
 #   BACKUP_DIR (./backups)  RETENTION_DAYS (14)  WAL_ARCHIVE_DIR (/wal-archive im Container)
 #   BASE_BACKUP_EVERY_DAYS (7)  BASE_RETENTION (2)  OFFSITE_REMOTE (leer = keine Kopie außer Haus)
+#   STORAGE_REMOTE (rclone-Remote des Objektspeichers mit Bucket, z. B. "storage:schnelldeal-private"; leer = Fotos/Videos/PDFs
+#   werden nicht außer Haus kopiert)  ALERT_WEBHOOK_URL (POST mit JSON {"text": ...} bei Fehlern, z. B. Slack/Teams/ntfy)
 set -euo pipefail
 
 BACKUP_DIR="${BACKUP_DIR:-$(cd "$(dirname "$0")/.." && pwd)/backups}"
@@ -23,6 +25,14 @@ BASE_BACKUP_EVERY_DAYS="${BASE_BACKUP_EVERY_DAYS:-7}"
 BASE_RETENTION="${BASE_RETENTION:-2}"
 DB="${PGDATABASE:-schnelldeal}"
 PGUSER="${PGUSER:-schnelldeal}"
+# Im Container liegt DATABASE_URL aus der Env-Datei vor (dieselbe Verbindung wie die API). Sie hat Vorrang vor PGHOST/PGDATABASE,
+# damit bei einer verwalteten Datenbank (Managed Postgres) nicht versehentlich der leere Compose-Postgres gesichert wird.
+DB_URL="${DATABASE_URL:-}"
+DB_URL_HOST="$(printf '%s' "${DB_URL}" | sed -nE 's#^[a-zA-Z]+://[^@/]*@([^:/?]+).*#\1#p')"
+EXTERNAL_DB=0
+if [ -n "${DB_URL_HOST}" ] && [ "${DB_URL_HOST}" != "${PGHOST:-postgres}" ] && [ "${DB_URL_HOST}" != "localhost" ] && [ "${DB_URL_HOST}" != "127.0.0.1" ]; then
+  EXTERNAL_DB=1
+fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 FILE="${BACKUP_DIR}/${DB}_${STAMP}.dump"
 FORCE_BASE=0
@@ -47,7 +57,7 @@ fi
 if [ "${USE_DOCKER}" = "1" ]; then
   docker compose exec -T postgres pg_dump -U "${PGUSER}" --format=custom --compress=9 --no-owner "${DB}" > "${FILE}"
 else
-  pg_dump --format=custom --compress=9 --no-owner --dbname="${DB}" --file="${FILE}"
+  pg_dump --format=custom --compress=9 --no-owner --dbname="${DB_URL:-${DB}}" --file="${FILE}"
 fi
 if [ ! -s "${FILE}" ]; then
   echo "FEHLER: Backup-Datei ist leer: ${FILE}" >&2
@@ -58,6 +68,12 @@ sha256sum "${FILE}" > "${FILE}.sha256"
 echo "Backup erstellt: ${FILE} (${SIZE} Bytes)"
 
 # ---------------------------------------------------------------- 2. Basissicherung für Point-in-Time-Recovery
+if [ "${EXTERNAL_DB}" = "1" ]; then
+  # WAL-Archiv und pg_basebackup gehören zum Compose-Postgres; bei einer verwalteten Datenbank übernimmt deren Anbieter die
+  # Zeitpunkt-Wiederherstellung. Der logische Dump oben stammt aus der echten Datenbank (DATABASE_URL).
+  echo "Externe Datenbank (${DB_URL_HOST}): keine lokale Basissicherung, PITR liegt beim Datenbankanbieter."
+  WAL_ARCHIVE_DIR=""
+fi
 if [ -n "${WAL_ARCHIVE_DIR}" ]; then
   BASE_DIR="${WAL_ARCHIVE_DIR}/base"
   pgx sh -c "mkdir -p '${BASE_DIR}'"
@@ -92,6 +108,13 @@ if [ -n "${OFFSITE_REMOTE:-}" ]; then
     rclone copy "${FILE}.sha256" "${OFFSITE_REMOTE}/dumps/" --no-traverse
     if [ -n "${WAL_ARCHIVE_DIR}" ] && [ "${USE_DOCKER}" != "1" ]; then
       rclone sync "${WAL_ARCHIVE_DIR}" "${OFFSITE_REMOTE}/pitr/" --exclude '*.tmp'
+    fi
+    if [ -n "${STORAGE_REMOTE:-}" ]; then
+      # Fotos, Videos, Dokumente und PDFs liegen im Objektspeicher und sind nicht Teil des Datenbank-Backups.
+      rclone sync "${STORAGE_REMOTE}" "${OFFSITE_REMOTE}/objects/" --fast-list
+      echo "Objektspeicher außer Haus synchronisiert: ${STORAGE_REMOTE} -> ${OFFSITE_REMOTE}/objects/"
+    else
+      echo "HINWEIS: STORAGE_REMOTE nicht gesetzt – Objektspeicher (Fotos, Videos, PDFs) wird nicht außer Haus gesichert." >&2
     fi
     echo "Kopie außer Haus aktualisiert: ${OFFSITE_REMOTE}"
   else

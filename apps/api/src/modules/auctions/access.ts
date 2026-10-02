@@ -12,10 +12,13 @@ import type { AuthUser } from '../../core/auth';
 export function dealerAuctionVisibility(user: AuthUser): SQL {
   const c = user.company;
   if (!c || c.type !== 'DEALER' || c.status !== 'APPROVED') return sql`false`;
-  const groupOk = sql`(${schema.auctions.dealerGroupId} IS NULL OR EXISTS (
-    SELECT 1 FROM dealer_group_members m WHERE m.group_id = ${schema.auctions.dealerGroupId} AND m.company_id = ${c.id}))`;
-  const participated = sql`(EXISTS (SELECT 1 FROM bids b WHERE b.auction_id = ${schema.auctions.id} AND b.company_id = ${c.id})
-    OR EXISTS (SELECT 1 FROM watchlist w WHERE w.vehicle_id = ${schema.auctions.vehicleId} AND w.company_id = ${c.id}))`;
+  // Spalten in den Unterabfragen ausdrücklich mit Tabellennamen: Drizzle lässt ihn bei Abfragen über eine einzige
+  // Tabelle weg, und ein unqualifiziertes "id"/"vehicle_id" würde dann an die innere Tabelle (bids, watchlist) binden.
+  const a = schema.auctions;
+  const groupOk = sql`(${a.dealerGroupId} IS NULL OR EXISTS (
+    SELECT 1 FROM dealer_group_members m WHERE m.group_id = ${a}.dealer_group_id AND m.company_id = ${c.id}))`;
+  const participated = sql`(EXISTS (SELECT 1 FROM bids b WHERE b.auction_id = ${a}.id AND b.company_id = ${c.id})
+    OR EXISTS (SELECT 1 FROM watchlist w WHERE w.vehicle_id = ${a}.vehicle_id AND w.company_id = ${c.id}))`;
   return sql`(
     (${schema.auctions.status} IN ('SCHEDULED','ACTIVE') AND ${groupOk})
     OR (${schema.auctions.status} IN ('ENDED','CANCELLED') AND ${participated})

@@ -128,6 +128,7 @@ export const LEGAL_KIND_LABELS: Record<LegalKind, string> = {
   TERMS: 'Allgemeine Geschäftsbedingungen',
   BIDDER_TERMS: 'Bieter- und Auktionsbedingungen',
   PRIVACY: 'Datenschutzerklärung',
+  IMPRINT: 'Impressum',
 };
 
 export const COMPANY_DOCUMENT_KIND_LABELS: Record<CompanyDocumentKind, string> = {

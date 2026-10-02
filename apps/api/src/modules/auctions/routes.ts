@@ -24,7 +24,8 @@ import { buildVehicleFile } from '../vehicles/presenter';
 import { createDealFromAuction } from '../deals/service';
 import { notifyCompany } from '../notifications/service';
 import { dealerAuctionVisibility } from './access';
-import { rateMax } from '../../config';
+import { config, rateMax } from '../../config';
+import { assertLegalReadyForAuctions } from '../legal/service';
 import { dealerAuctionState, sellerAuctionState } from './presenter';
 import {
   activateAuction,
@@ -270,6 +271,7 @@ export async function auctionRoutes(app: FastifyInstance): Promise<void> {
       }
       const v = await loadVehicleForAuction(tx, a.vehicleId);
       if (v.status !== 'APPROVED' && v.status !== 'UNSOLD') throw new AppError(409, 'VEHICLE_NOT_READY', 'Das Fahrzeug ist nicht freigegeben.');
+      await assertLegalReadyForAuctions(tx, config.NODE_ENV === 'production');
       await tx.update(schema.vehicles).set({ status: 'SCHEDULED', updatedAt: new Date() }).where(eq(schema.vehicles.id, v.id));
       await audit(tx, actorOf(req), { event: 'VEHICLE_STATUS_CHANGED', entityType: 'vehicle', entityId: v.id, oldValue: { status: v.status }, newValue: { status: 'SCHEDULED' } });
       await tx.update(schema.auctions).set({ status: 'SCHEDULED', version: sql`${schema.auctions.version} + 1`, updatedAt: new Date() }).where(eq(schema.auctions.id, id));
@@ -296,6 +298,7 @@ export async function auctionRoutes(app: FastifyInstance): Promise<void> {
     return db.transaction(async (tx) => {
       const a = await lockAuction(tx, id);
       if (a.status !== 'SCHEDULED' && a.status !== 'DRAFT') throw new AppError(409, 'INVALID_TRANSITION', 'Auktion kann nicht gestartet werden.');
+      await assertLegalReadyForAuctions(tx, config.NODE_ENV === 'production');
       const now = await dbClock(tx);
       const endsAt = new Date(now.getTime() + a.durationMinutes * 60_000);
       if (a.status === 'DRAFT') {
@@ -560,6 +563,85 @@ export async function auctionRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * Kennzahlen für die Händler-Startseite, berechnet über alle für diesen Händler sichtbaren Auktionen
+   * (nicht nur die aktuelle Seite der Liste).
+   */
+  app.get('/auctions/summary', { preHandler: requireAuth }, async (req) => {
+    const u = getAuth(req);
+    if (u.company?.type !== 'DEALER') throw new AppError(403, 'FORBIDDEN', 'Nur für Händler.');
+    const settings = await getSettings(db);
+    const [row] = await db
+      .select({
+        active: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE')::int`,
+        scheduled: sql<number>`count(*) filter (where ${schema.auctions.status} = 'SCHEDULED')::int`,
+        endingSoon: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE' and ${schema.auctions.endsAt} <= now() + make_interval(mins => ${settings.endingSoonMinutes}))::int`,
+        newToday: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE' and coalesce(${schema.auctions.startedAt}, ${schema.auctions.startsAt}) >= now() - interval '24 hours')::int`,
+        catalogs: sql<number>`count(distinct ${schema.auctions.catalogId}) filter (where ${schema.auctions.status} in ('ACTIVE','SCHEDULED'))::int`,
+        myLeading: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE' and ${schema.auctions.currentBidderCompanyId} = ${u.company.id})::int`,
+        // Unterabfragen mit ausdrücklichem Tabellennamen (siehe access.ts).
+        myOutbid: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE' and ${schema.auctions.currentBidderCompanyId} is distinct from ${u.company.id}
+          and exists (select 1 from bids b where b.auction_id = ${schema.auctions}.id and b.company_id = ${u.company.id}))::int`,
+        watched: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE' and exists (select 1 from watchlist w where w.vehicle_id = ${schema.auctions}.vehicle_id and w.user_id = ${u.userId}))::int`,
+      })
+      .from(schema.auctions)
+      .where(dealerAuctionVisibility(u));
+    return { ...row!, endingSoonMinutes: settings.endingSoonMinutes, serverNow: await dbClock(db) };
+  });
+
+  /**
+   * Kataloge („Showrooms“) für Händler: nur veröffentlichte Kataloge mit mindestens einer sichtbaren,
+   * laufenden oder geplanten Auktion. Zahlen und Titelbild stammen aus genau diesen Auktionen.
+   */
+  app.get('/catalogs', { preHandler: requireAuth }, async (req) => {
+    const u = getAuth(req);
+    if (u.company?.type !== 'DEALER') throw new AppError(403, 'FORBIDDEN', 'Nur für Händler.');
+    const rows = await db
+      .select({
+        id: schema.catalogs.id,
+        name: schema.catalogs.name,
+        description: schema.catalogs.description,
+        startsAt: schema.catalogs.startsAt,
+        endsAt: schema.catalogs.endsAt,
+        vehicleCount: sql<number>`count(${schema.auctions.id})::int`,
+        activeCount: sql<number>`count(*) filter (where ${schema.auctions.status} = 'ACTIVE')::int`,
+        firstEndsAt: sql<Date | null>`min(${schema.auctions.endsAt}) filter (where ${schema.auctions.status} = 'ACTIVE')`,
+        lastEndsAt: sql<Date | null>`max(${schema.auctions.endsAt})`,
+        // Titelbild: Kartenfoto der zuerst endenden sichtbaren Auktion.
+        coverVehicleId: sql<string | null>`(array_agg(${schema.auctions.vehicleId} order by ${schema.auctions.endsAt}))[1]`,
+      })
+      .from(schema.catalogs)
+      .innerJoin(schema.auctions, and(eq(schema.auctions.catalogId, schema.catalogs.id), inArray(schema.auctions.status, ['ACTIVE', 'SCHEDULED']), dealerAuctionVisibility(u)))
+      .where(eq(schema.catalogs.status, 'PUBLISHED'))
+      .groupBy(schema.catalogs.id)
+      .orderBy(sql`min(${schema.auctions.endsAt})`);
+    const items = await Promise.all(
+      rows.map(async (r) => {
+        const [photo] = r.coverVehicleId
+          ? await db
+              .select({ id: schema.vehiclePhotos.id })
+              .from(schema.vehiclePhotos)
+              .where(and(eq(schema.vehiclePhotos.vehicleId, r.coverVehicleId), eq(schema.vehiclePhotos.slot, 'FRONT_LEFT_45'), sql`${schema.vehiclePhotos.replacedById} is null`))
+              .orderBy(desc(schema.vehiclePhotos.createdAt))
+              .limit(1)
+          : [];
+        return {
+          id: r.id,
+          name: r.name,
+          description: r.description,
+          startsAt: r.startsAt?.toISOString() ?? null,
+          endsAt: r.endsAt?.toISOString() ?? null,
+          vehicleCount: r.vehicleCount,
+          activeCount: r.activeCount,
+          firstEndsAt: r.firstEndsAt ? new Date(r.firstEndsAt).toISOString() : null,
+          lastEndsAt: r.lastEndsAt ? new Date(r.lastEndsAt).toISOString() : null,
+          cover: photo && r.coverVehicleId ? { vehicleId: r.coverVehicleId, photoId: photo.id } : null,
+        };
+      }),
+    );
+    return { items, serverNow: await dbClock(db) };
+  });
+
   app.get('/auctions/:id', { preHandler: requireAuth }, async (req) => {
     const id = aid(req);
     const { a, role } = await loadAuctionForViewer(db, req, id);
@@ -576,6 +658,7 @@ export async function auctionRoutes(app: FastifyInstance): Promise<void> {
         catalog: await catalogContext(db, user, a),
         // Verkäuferidentität bleibt bis zum Zuschlag vertraulich (§3.3); Fragen laufen über den Plattformbetreiber.
         contact: { name: settings.platformName, email: settings.supportEmail || null, phone: settings.supportPhone || null },
+        notice: settings.auctionNotice || null,
       };
     }
     return { state: sellerAuctionState(a, serverNow), vehicle: await buildVehicleFile(db, a.vehicleId, role === 'admin' ? 'admin' : 'dealership') };

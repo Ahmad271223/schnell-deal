@@ -25,6 +25,12 @@ async function main() {
     console.error('Demo-Daten dürfen nicht in Produktion angelegt werden.');
     process.exit(1);
   }
+  // Die Beispielwerte aus .env.example sind öffentlich (Repository); sie dürfen außerhalb der Entwicklung nicht gelten.
+  const KNOWN_EXAMPLE_PASSWORDS = new Set(['Admin-Lokal-2026', 'Demo-Lokal-2026', 'Sicher12345!']);
+  if ((process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') && KNOWN_EXAMPLE_PASSWORDS.has(adminPassword)) {
+    console.error('SEED_ADMIN_PASSWORD ist ein öffentlich bekannter Beispielwert. Bitte ein eigenes, langes Passwort setzen.');
+    process.exit(1);
+  }
   await runMigrations();
   await db.transaction(async (tx) => {
     await ensureLegalTemplates(tx);

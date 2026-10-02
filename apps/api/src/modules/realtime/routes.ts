@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { and, eq, sql } from 'drizzle-orm';
-import { allowedOrigins, isAllowedOrigin } from '../../config';
+import { allowedOrigins } from '../../config';
 import { db, schema } from '../../core/db/client';
 import { isAdmin, resolveSession, SESSION_COOKIE, type AuthUser } from '../../core/auth';
 import { channels, hub } from '../../core/realtime';
@@ -42,7 +42,7 @@ async function canSubscribe(user: AuthUser, channel: string): Promise<boolean> {
 export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ws', { websocket: true }, async (socket: WebSocket, req) => {
     const origin = req.headers.origin;
-    if (origin && !isAllowedOrigin(origin)) {
+    if (origin && !allowedOrigins.includes(origin)) {
       socket.close(4003, 'origin_not_allowed');
       return;
     }
@@ -55,11 +55,25 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
     hub.subscribe(socket, channels.user(user.userId));
     socket.send(JSON.stringify({ type: 'hello', serverNow: new Date().toISOString(), userId: user.userId }));
 
-    let subscriptions = 0;
+    const subscriptions = new Set<string>();
+    // Drossel je Verbindung: höchstens 60 Nachrichten in 10 Sekunden (Pings eingeschlossen); das HTTP-Ratenlimit greift hier nicht.
+    let windowStart = Date.now();
+    let messagesInWindow = 0;
     socket.on('message', async (raw) => {
+      const now = Date.now();
+      if (now - windowStart > 10_000) {
+        windowStart = now;
+        messagesInWindow = 0;
+      }
+      if (++messagesInWindow > 60) {
+        socket.close(4008, 'rate_limited');
+        return;
+      }
+      const text = String(raw);
+      if (text.length > 1_000) return;
       let msg: { type?: string; channel?: string; id?: string };
       try {
-        msg = JSON.parse(String(raw));
+        msg = JSON.parse(text);
       } catch {
         return;
       }
@@ -70,9 +84,14 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
       if ((msg.type === 'subscribe' || msg.type === 'unsubscribe') && typeof msg.channel === 'string' && msg.channel.length < 100) {
         if (msg.type === 'unsubscribe') {
           hub.unsubscribe(socket, msg.channel);
+          subscriptions.delete(msg.channel);
           return;
         }
-        if (subscriptions >= 200) {
+        if (subscriptions.has(msg.channel)) {
+          socket.send(JSON.stringify({ type: 'subscribed', channel: msg.channel, serverNow: new Date().toISOString() }));
+          return;
+        }
+        if (subscriptions.size >= 200) {
           socket.send(JSON.stringify({ type: 'error', channel: msg.channel, code: 'TOO_MANY_SUBSCRIPTIONS' }));
           return;
         }
@@ -84,7 +103,7 @@ export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
         }
         if (await canSubscribe(fresh, msg.channel)) {
           hub.subscribe(socket, msg.channel);
-          subscriptions++;
+          subscriptions.add(msg.channel);
           socket.send(JSON.stringify({ type: 'subscribed', channel: msg.channel, serverNow: new Date().toISOString() }));
         } else {
           socket.send(JSON.stringify({ type: 'error', channel: msg.channel, code: 'FORBIDDEN' }));

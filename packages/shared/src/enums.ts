@@ -28,7 +28,7 @@ export type BiddingStatus = (typeof BIDDING_STATUSES)[number];
 export const COMPANY_DOCUMENT_KINDS = ['TRADE_LICENSE', 'ID_DOCUMENT', 'REGISTER_EXTRACT', 'OTHER'] as const;
 export type CompanyDocumentKind = (typeof COMPANY_DOCUMENT_KINDS)[number];
 
-export const LEGAL_KINDS = ['TERMS', 'BIDDER_TERMS', 'PRIVACY'] as const;
+export const LEGAL_KINDS = ['TERMS', 'BIDDER_TERMS', 'PRIVACY', 'IMPRINT'] as const;
 export type LegalKind = (typeof LEGAL_KINDS)[number];
 
 export const INSPECTION_STATUSES = [

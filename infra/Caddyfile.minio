@@ -1,0 +1,30 @@
+# Reverse-Proxy für Staging MIT eingebautem MinIO (docker compose --profile app --profile minio, CADDYFILE=./infra/Caddyfile.minio).
+# SITE_ADDRESS=auktion.example.de, STORAGE_ADDRESS=storage.example.de (S3_PUBLIC_ENDPOINT=https://storage.example.de)
+# Produktion mit externem Objektspeicher (S3, R2, Hetzner Object Storage) nutzt infra/Caddyfile ohne diesen Block.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	# API inkl. WebSocket (/api/v1/ws) – Caddy leitet Upgrades automatisch weiter
+	handle /api/* {
+		reverse_proxy api:4000 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# MinIO nur für signierte Download-URLs (GET); die Admin-Konsole (9001) bleibt im Compose-Netz.
+{$STORAGE_ADDRESS} {
+	header {
+		-Server
+	}
+	reverse_proxy minio:9000
+}

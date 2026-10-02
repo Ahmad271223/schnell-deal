@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
+  AlertTriangle,
+  BatteryCharging,
   CalendarDays,
   Car,
   Check,
@@ -21,6 +23,7 @@ import {
   Cog,
   Disc3,
   Droplet,
+  Expand,
   FileText,
   Forward,
   Fuel,
@@ -29,20 +32,27 @@ import {
   IdCard,
   ImageOff,
   Images,
-  Info,
   Mail,
   MapPin,
+  Megaphone,
+  Minus,
   Phone,
   PlayCircle,
   ShieldCheck,
   Star,
   Tag,
   UserRound,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import {
   approxCoordinatesForZip,
+  BATTERY_KIND_LABELS,
   BODY_LABELS,
+  DAMAGE_KIND_LABELS,
+  DAMAGE_SEVERITY_LABELS,
+  DAMAGE_ZONE_LABELS,
+  DRIVE_LABELS,
   EMISSION_CLASS_LABELS,
   formatDateDe,
   formatIsoDateDe,
@@ -51,14 +61,18 @@ import {
   HOLDER_TYPE_LABELS,
   PHOTO_SLOT_LABELS,
   REQUIRED_PHOTO_SLOTS,
+  TAX_TYPE_LABELS,
   TRANSMISSION_LABELS,
+  VEHICLE_DOCUMENT_KIND_LABELS,
+  type DamageZone,
   type PhotoSlot,
+  type VehicleDocumentKind,
 } from '@sd/shared';
 import { photoUrl, vehicleVideoUrl } from '@/lib/api';
 import type { AuctionCatalogContext, DealerAuctionDetail, DealerAuctionState, VehicleFile } from '@/lib/types';
+import { DamageSketch } from './damage-sketch';
 import { Lightbox, type GalleryPhoto } from './photo-gallery';
-import { ConditionSection, DamagesSection, DiagnosticsSection, DocumentsSection, dtcCount, formatHu, PaintSection, TiresSection } from './vehicle-file';
-import { StatusBadge } from './ui';
+import { ConditionSection, DiagnosticsSection, DocumentsSection, dtcCount, formatHu, PaintSection, TiresSection } from './vehicle-file';
 
 /** "2022-05-01" → "05/2022" */
 export function monthYear(iso: string | null | undefined): string {
@@ -163,15 +177,16 @@ export function AuctionGallery({ vehicleId, photos, live }: { vehicleId: string;
   const visible = sortForGallery(photos.filter((p) => !p.replaced));
   const [index, setIndex] = useState(0);
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const go = (d: number) => setIndex((i) => (i + d + visible.length) % visible.length);
+  const swipe = useSwipe(go);
   if (visible.length === 0) {
     return (
-      <div className="flex aspect-[2/1] items-center justify-center gap-2 rounded-lg bg-slate-200 text-sm text-slate-500">
+      <div className="flex aspect-[2/1] items-center justify-center gap-2 rounded-2xl bg-slate-200 text-sm text-slate-500">
         <ImageOff className="h-5 w-5" aria-hidden /> Keine Fotos vorhanden.
       </div>
     );
   }
   const current = visible[Math.min(index, visible.length - 1)]!;
-  const go = (d: number) => setIndex((i) => (i + d + visible.length) % visible.length);
   const thumbs = visible.slice(0, 4);
   const more = visible.length - thumbs.length;
 
@@ -179,9 +194,9 @@ export function AuctionGallery({ vehicleId, photos, live }: { vehicleId: string;
     // Container-Abfragen: Die Vorschauspalte steht neben dem Hauptbild, sobald die Galerie selbst breit genug ist.
     <div className="@container">
       <div className="grid gap-[9px] @2xl:grid-cols-[minmax(0,1fr)_9.875rem]">
-        <div className="relative overflow-hidden rounded-lg bg-slate-900">
+        <div className="relative touch-pan-y select-none overflow-hidden rounded-2xl bg-slate-900" {...swipe}>
           <button type="button" className="block w-full" onClick={() => setLightbox(index)} aria-label={`${PHOTO_SLOT_LABELS[current.slot]} vergrößern`}>
-            <img src={photoUrl(vehicleId, current.id, 'web')} alt={PHOTO_SLOT_LABELS[current.slot]} className="aspect-[16/10] w-full object-cover @2xl:aspect-[2/1]" />
+            <img src={photoUrl(vehicleId, current.id, 'web')} alt={PHOTO_SLOT_LABELS[current.slot]} draggable={false} className="aspect-[16/10] w-full object-cover @2xl:aspect-[2/1]" />
           </button>
           {live && <span className="pointer-events-none absolute left-5 top-[18px] rounded-md bg-red-600 px-3 py-1 text-[15px] font-bold tracking-wide text-white shadow">LIVE</span>}
           {visible.length > 1 && (
@@ -371,127 +386,7 @@ export function KeyFacts({ file }: { file: VehicleFile }) {
   );
 }
 
-// ---------------------------------------------------------------- Reiter der Fahrzeugakte
-
-export type AuctionTab = 'overview' | 'equipment' | 'condition' | 'damages' | 'paint' | 'tires' | 'diagnostics' | 'documents' | 'location';
-
-export function AuctionVehicleTabs({ file, state, tab, onTab }: { file: VehicleFile; state: DealerAuctionState; tab: AuctionTab; onTab: (t: AuctionTab) => void }) {
-  const tabs: { id: AuctionTab; label: string }[] = [
-    { id: 'overview', label: 'Übersicht' },
-    { id: 'equipment', label: 'Ausstattung' },
-    { id: 'condition', label: 'Zustand' },
-    { id: 'damages', label: `Schäden (${file.damages.length})` },
-    { id: 'paint', label: 'Lackmessung' },
-    { id: 'tires', label: `Reifen (${file.tires.length})` },
-    { id: 'diagnostics', label: 'Diagnose' },
-    { id: 'documents', label: 'Dokumente' },
-    { id: 'location', label: 'Standort' },
-  ];
-  return (
-    <section id="fahrzeugakte" className="scroll-mt-20">
-      <div role="tablist" aria-label="Fahrzeugakte" className="flex gap-1 overflow-x-auto border-b border-slate-200">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`tab-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={`panel-${t.id}`}
-            onClick={() => onTab(t.id)}
-            className={clsx(
-              '-mb-px whitespace-nowrap border-b-[3px] px-3.5 py-2.5 text-[13px]',
-              tab === t.id ? 'border-red-600 font-semibold text-slate-950' : 'border-transparent text-slate-700 hover:text-slate-950',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="@container pt-2">
-        {tab === 'overview' ? (
-          <OverviewPanel file={file} onShowEquipment={() => onTab('equipment')} />
-        ) : (
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            {tab === 'equipment' && (
-              <>
-                <h3 className="mb-3 text-[15px] font-bold text-slate-950">Ausstattung</h3>
-                <EquipmentChecklist items={file.equipment} columns="@md:columns-2 @3xl:columns-3" />
-              </>
-            )}
-            {tab === 'condition' && (
-              <div className="space-y-5">
-                <div className="flex flex-wrap gap-2">
-                  {file.hasDamages ? <StatusBadge label={`${file.damages.length} Schaden/Schäden dokumentiert`} tone="warning" /> : <StatusBadge label="Keine Schäden dokumentiert" tone="success" />}
-                  {file.paintFlagged ? <StatusBadge label="Auffällige Lackmesswerte" tone="warning" /> : file.paint.length > 0 && <StatusBadge label="Lackmesswerte unauffällig" tone="success" />}
-                  {dtcCount(file) > 0 && <StatusBadge label={`${dtcCount(file)} Fehlercode(s)`} tone="warning" />}
-                  {file.inspectionCompletedAt && <StatusBadge label={`Aufnahme abgeschlossen (${file.completenessPct} %)`} tone="info" />}
-                </div>
-                <ConditionSection file={file} />
-              </div>
-            )}
-            {tab === 'damages' && <DamagesSection file={file} />}
-            {tab === 'paint' && <PaintSection file={file} />}
-            {tab === 'tires' && <TiresSection file={file} />}
-            {tab === 'diagnostics' && <DiagnosticsSection file={file} />}
-            {tab === 'documents' && <DocumentsSection file={file} />}
-            {tab === 'location' && <LocationPanel state={state} />}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-const EQUIPMENT_PREVIEW = 22; // zwei Spalten à 11 Zeilen wie in der Vorlage
-
-function OverviewPanel({ file, onShowEquipment }: { file: VehicleFile; onShowEquipment: () => void }) {
-  const rows: [string, string][] = [
-    ['Marke', file.make ?? '–'],
-    ['Modell', file.model ?? '–'],
-    ['Ausstattungslinie', file.variant ?? '–'],
-    ['Erstzulassung', monthYear(file.firstRegistration)],
-    ['Kilometerstand', formatKm(file.mileageKm)],
-    ['Kraftstoff', file.fuel ? FUEL_LABELS[file.fuel] : '–'],
-    ['Getriebe', file.transmission ? TRANSMISSION_LABELS[file.transmission] : '–'],
-    ['Leistung', file.powerKw ? `${file.powerKw} kW (${file.powerPs} PS)` : '–'],
-    ['Farbe', file.color ?? '–'],
-    ['Karosserie', file.body ? BODY_LABELS[file.body] : '–'],
-    ['Türen / Sitzplätze', `${file.doors ?? '–'} / ${file.seats ?? '–'}`],
-    ['Schadstoffklasse', file.emissionClass ? EMISSION_CLASS_LABELS[file.emissionClass] : '–'],
-    ['FIN', file.vin ?? '–'],
-  ];
-  const preview = file.equipment.slice(0, EQUIPMENT_PREVIEW);
-  const rest = file.equipment.length - preview.length;
-  return (
-    <div className="grid gap-2 @3xl:grid-cols-[minmax(0,397fr)_minmax(0,622fr)]">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-[15px] font-bold text-slate-950">Fahrzeugdaten</h3>
-        <dl className="text-[12.5px]">
-          {rows.map(([k, val], i) => (
-            <div key={k} className={clsx('grid grid-cols-[9.25rem_minmax(0,1fr)] gap-2 px-1 py-[1px] leading-[17px]', i % 2 === 1 && 'bg-slate-50')}>
-              <dt className="text-slate-600">{k}</dt>
-              <dd className="break-words text-slate-900">{val}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-      <div className="flex flex-col rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-2 text-[15px] font-bold text-slate-950">
-          Ausstattung <span className="font-normal text-slate-600">(Auszug)</span>
-        </h3>
-        <div className="flex-1">
-          <EquipmentChecklist items={preview} columns="@md:columns-2" />
-        </div>
-        {rest > 0 && (
-          <button type="button" onClick={onShowEquipment} className="mt-3 flex h-[27px] w-full items-center justify-center gap-2 rounded border border-slate-200 bg-white text-[12.5px] font-medium text-slate-900 hover:bg-slate-50">
-            Vollständige Ausstattung anzeigen ({rest} weitere) <ChevronRight className="h-4 w-4" aria-hidden />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
+// ---------------------------------------------------------------- Ausstattung
 
 function EquipmentChecklist({ items, columns }: { items: string[]; columns: string }) {
   if (items.length === 0) return <p className="text-[12.5px] text-slate-500">Keine Ausstattungsmerkmale erfasst.</p>;
@@ -612,16 +507,19 @@ export function LocationCard({ state, contact, onShowMap }: { state: DealerAucti
   );
 }
 
-// ---------------------------------------------------------------- One-Pager (Apple-Karten-Stil)
+// ---------------------------------------------------------------- One-Pager (Karten-Stil)
 
-/** Karten-Abschnitt im modernen „Apple"-Look: runde Ecken, dezenter Rahmen, großzügiger Abstand. */
-export function Section({ id, icon: Icon, title, action, children }: { id?: string; icon?: LucideIcon; title: string; action?: ReactNode; children: ReactNode }) {
+/** Karten-Abschnitt: runde Ecken, dezenter Rahmen, großzügiger Abstand. */
+export function Section({ id, icon: Icon, title, subtitle, action, children }: { id?: string; icon?: LucideIcon; title: string; subtitle?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
-    <section id={id} className="@container scroll-mt-20 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6" data-testid={id ? `section-${id}` : undefined}>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-display text-[17px] font-bold tracking-tight text-slate-950">
-          {Icon && <Icon className="h-5 w-5 text-brand-600" aria-hidden />} {title}
-        </h2>
+    <section id={id} className="@container scroll-mt-24 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6" data-testid={id ? `section-${id}` : undefined}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 font-display text-[17px] font-bold tracking-tight text-slate-950">
+            {Icon && <Icon className="h-5 w-5 text-brand-600" aria-hidden />} {title}
+          </h2>
+          {subtitle && <p className="mt-0.5 text-[13px] text-slate-500">{subtitle}</p>}
+        </div>
         {action}
       </div>
       {children}
@@ -629,128 +527,429 @@ export function Section({ id, icon: Icon, title, action, children }: { id?: stri
   );
 }
 
+/** Segmentierter Umschalter (iOS-Stil). */
+export function Segmented<T extends string>({ options, value, onChange, label, testPrefix }: { options: { id: T; label: string; icon?: LucideIcon; count?: number }[]; value: T; onChange: (v: T) => void; label: string; testPrefix?: string }) {
+  return (
+    <div role="tablist" aria-label={label} className="no-scrollbar inline-flex max-w-full gap-0.5 overflow-x-auto rounded-xl bg-slate-100 p-1">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="tab"
+          aria-selected={value === o.id}
+          onClick={() => onChange(o.id)}
+          data-testid={testPrefix ? `${testPrefix}-${o.id}` : undefined}
+          className={clsx(
+            'inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3.5 text-[13px] font-medium transition-all',
+            value === o.id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-950',
+          )}
+        >
+          {o.icon && <o.icon className="h-4 w-4" aria-hidden />}
+          {o.label}
+          {o.count !== undefined && <span className="tabular text-slate-400">{o.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Horizontales Wischen (Finger oder Maus) ohne Bibliothek; senkrechtes Scrollen bleibt unberührt (`touch-pan-y`). */
+export function useSwipe(onSwipe: (dir: 1 | -1) => void) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      start.current = { x: e.clientX, y: e.clientY };
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const s = start.current;
+      start.current = null;
+      if (!s) return;
+      const dx = e.clientX - s.x;
+      const dy = e.clientY - s.y;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) onSwipe(dx < 0 ? 1 : -1);
+    },
+    onPointerCancel: () => {
+      start.current = null;
+    },
+  };
+}
+
 type MediaKind = 'images' | 'condition' | 'documents' | 'video';
 
-/** Medienbereich mit Umschaltern oben: Alle Bilder · Zustandsbilder · Dokumente · Motorvideo. */
+/** Medienbereich mit Umschalter: Alle Bilder · Zustandsbilder · Dokumente · Motorvideo. */
 export function AuctionMedia({ file, live }: { file: VehicleFile; live: boolean }) {
+  const allPhotos = file.photos.filter((p) => !p.replaced);
   const conditionPhotos: GalleryPhoto[] = useMemo(() => {
     const ids = new Set<string>();
     for (const d of file.damages) for (const pid of d.photoIds) ids.add(pid);
-    for (const p of file.photos) if (!p.replaced && p.slot === 'DAMAGE') ids.add(p.id);
+    for (const p of file.photos) if (!p.replaced && (p.slot === 'DAMAGE' || p.slot === 'PDR_LINEBOARD')) ids.add(p.id);
     return Array.from(ids).map((pid) => ({ id: pid, slot: 'DAMAGE' as PhotoSlot }));
   }, [file.damages, file.photos]);
-  const tabs = [
-    { id: 'images' as MediaKind, label: 'Alle Bilder', icon: Images, show: true },
-    { id: 'condition' as MediaKind, label: 'Zustandsbilder', icon: ClipboardCheck, show: conditionPhotos.length > 0 },
-    { id: 'documents' as MediaKind, label: 'Dokumente', icon: FileText, show: file.documents.length > 0 },
+  const options = [
+    { id: 'images' as MediaKind, label: 'Alle Bilder', icon: Images, count: allPhotos.length, show: true },
+    { id: 'condition' as MediaKind, label: 'Zustandsbilder', icon: ClipboardCheck, count: conditionPhotos.length, show: conditionPhotos.length > 0 },
+    { id: 'documents' as MediaKind, label: 'Dokumente', icon: FileText, count: file.documents.length, show: file.documents.length > 0 },
     { id: 'video' as MediaKind, label: 'Motorvideo', icon: PlayCircle, show: !!file.hasEngineVideo },
   ].filter((t) => t.show);
   const [kind, setKind] = useState<MediaKind>('images');
-  const active = tabs.some((t) => t.id === kind) ? kind : 'images';
+  const active = options.some((t) => t.id === kind) ? kind : 'images';
   return (
     <div>
-      <div role="tablist" aria-label="Medien" className="mb-2.5 flex gap-1 overflow-x-auto border-b border-slate-200">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={active === t.id}
-            onClick={() => setKind(t.id)}
-            data-testid={`media-tab-${t.id}`}
-            className={clsx(
-              '-mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-[3px] px-3.5 py-2.5 text-[13px] transition-colors',
-              active === t.id ? 'border-brand-600 font-semibold text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950',
-            )}
-          >
-            <t.icon className="h-4 w-4" aria-hidden /> {t.label}
-          </button>
-        ))}
+      <div className="mb-3">
+        <Segmented options={options} value={active} onChange={setKind} label="Medien" testPrefix="media-tab" />
       </div>
       {active === 'images' && <AuctionGallery vehicleId={file.id} photos={file.photos} live={live} />}
       {active === 'condition' && <AuctionGallery vehicleId={file.id} photos={conditionPhotos} live={false} />}
       {active === 'documents' && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <DocumentsSection file={file} />
         </div>
       )}
       {active === 'video' && (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-black" data-testid="engine-video">
+        <div className="overflow-hidden rounded-2xl bg-black shadow-sm" data-testid="engine-video">
           <video src={vehicleVideoUrl(file.id)} controls preload="metadata" playsInline className="aspect-video w-full bg-black" />
+          <p className="px-4 py-2.5 text-[12px] text-slate-300">Vom Außendienst bei der Aufnahme aufgezeichnet.</p>
         </div>
       )}
     </div>
   );
 }
 
-/** Fahrzeugdaten als zweispaltige Liste. */
-function VehicleDataGrid({ file }: { file: VehicleFile }) {
-  const rows: [string, string][] = [
-    ['Marke', file.make ?? '–'],
-    ['Modell', file.model ?? '–'],
-    ['Ausstattungslinie', file.variant ?? '–'],
-    ['Erstzulassung', monthYear(file.firstRegistration)],
-    ['Kilometerstand', formatKm(file.mileageKm)],
-    ['Kraftstoff', file.fuel ? FUEL_LABELS[file.fuel] : '–'],
-    ['Getriebe', file.transmission ? TRANSMISSION_LABELS[file.transmission] : '–'],
-    ['Leistung', file.powerKw ? `${file.powerKw} kW (${file.powerPs} PS)` : '–'],
-    ['Farbe', file.color ?? '–'],
-    ['Karosserie', file.body ? BODY_LABELS[file.body] : '–'],
-    ['Türen / Sitzplätze', `${file.doors ?? '–'} / ${file.seats ?? '–'}`],
-    ['Vorbesitzer', file.ownersCount !== null ? String(file.ownersCount) : '–'],
-    ['HU bis', formatHu(file.huUntil)],
-    ['Schadstoffklasse', file.emissionClass ? EMISSION_CLASS_LABELS[file.emissionClass] : '–'],
-    ['FIN', file.vin ?? '–'],
+// ---------------------------------------------------------------- Fahrzeugdaten in Gruppen (wie in der Vorlage)
+
+function DataCard({ title, icon: Icon, rows }: { title: string; icon?: LucideIcon; rows: [string, ReactNode][] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5" data-testid={`data-card-${title}`}>
+      <h3 className="mb-1.5 flex items-center gap-2 font-display text-[15px] font-bold text-slate-950">
+        {Icon && <Icon className="h-4 w-4 text-slate-500" aria-hidden />}
+        {title}
+      </h3>
+      <dl className="text-[13px]">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between gap-4 border-b border-slate-100 py-2 last:border-b-0">
+            <dt className="text-slate-500">{k}</dt>
+            <dd className="text-right font-medium text-slate-900">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/** „–“ = bei der Aufnahme nicht erfasst. Es werden keine Werte ergänzt oder geschätzt. */
+const dash = (v: ReactNode | null | undefined): ReactNode => (v === null || v === undefined || v === '' ? '–' : v);
+
+function VehicleDataGroups({ file, state }: { file: VehicleFile; state: DealerAuctionState }) {
+  const place = [state.location.zip, state.location.city].filter(Boolean).join(' ');
+  const hv = file.battery?.hvInfo ?? null;
+  const electrified = file.fuel === 'ELECTRIC' || (file.fuel ?? '').startsWith('HYBRID');
+  return (
+    <div className="grid gap-3 @3xl:grid-cols-2">
+      <DataCard
+        title="Allgemeine Daten"
+        icon={Car}
+        rows={[
+          ['Marke', dash(file.make)],
+          ['Modell', dash(file.model)],
+          ['Ausstattungslinie', dash(file.variant)],
+          ['Karosserie', file.body ? BODY_LABELS[file.body] : '–'],
+          ['Außenfarbe', dash(file.color)],
+          ['Anzahl Türen', dash(file.doors)],
+          ['Anzahl Sitze', dash(file.seats)],
+          ['FIN', file.vin ? <span className="font-mono tracking-wide">{file.vin}</span> : '–'],
+          ['Fahrzeug-ID', file.internalNumber],
+        ]}
+      />
+      <DataCard
+        title="Herkunft & Besteuerung"
+        icon={MapPin}
+        rows={[
+          ['Standort', place || '–'],
+          ['Fahrzeughalter', file.holderType ? HOLDER_TYPE_LABELS[file.holderType] : '–'],
+          ['Herkunft / Vornutzung', dash(file.origin)],
+          ['Besteuerung', TAX_TYPE_LABELS[state.taxType]],
+          ['Früheste Abholung', state.earliestPickup ? formatIsoDateDe(state.earliestPickup) : '–'],
+        ]}
+      />
+      <DataCard
+        title="Motor & Antrieb"
+        icon={Cog}
+        rows={[
+          ['Kraftstoff', file.fuel ? FUEL_LABELS[file.fuel] : '–'],
+          ['Leistung', file.powerKw ? `${file.powerPs} PS (${file.powerKw} kW)` : '–'],
+          ['Hubraum', file.displacementCcm ? `${file.displacementCcm.toLocaleString('de-DE')} cm³` : '–'],
+          ['Getriebe', file.transmission ? TRANSMISSION_LABELS[file.transmission] : '–'],
+          ['Antrieb', file.drive ? DRIVE_LABELS[file.drive] : '–'],
+          ['Schadstoffklasse', file.emissionClass ? EMISSION_CLASS_LABELS[file.emissionClass] : '–'],
+        ]}
+      />
+      <DataCard
+        title="Wartung & Historie"
+        icon={CalendarDays}
+        rows={[
+          ['Erstzulassung', monthYear(file.firstRegistration)],
+          ['Modelljahr', dash(file.modelYear)],
+          ['Kilometerstand', formatKm(file.mileageKm)],
+          ['HU bis', formatHu(file.huUntil)],
+          ['Anzahl Vorbesitzer', dash(file.ownersCount)],
+          ['Anzahl Schlüssel', dash(file.keysCount)],
+        ]}
+      />
+      {file.battery && (electrified || hv) && (
+        <DataCard
+          title="Hochvoltbatterie"
+          icon={BatteryCharging}
+          rows={[
+            ['Batterieart', BATTERY_KIND_LABELS[file.battery.kind]],
+            ['Gesundheitszustand (SoH)', hv?.sohPercent !== null && hv?.sohPercent !== undefined ? `${hv.sohPercent} %` : '–'],
+            ['Kapazität', hv?.capacityKwh !== null && hv?.capacityKwh !== undefined ? `${hv.capacityKwh} kWh` : '–'],
+            ['Quelle der Angabe', dash(file.battery.hvSource)],
+            ['Hinweise', dash(hv?.notes)],
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Zustand: Überblick, Schäden, Dokumente
+
+/** Kacheln mit echten Zählwerten aus der Akte. Keine Aussage zu Unfallfreiheit (§14): nur dokumentierte Befunde. */
+function ConditionSummary({ file }: { file: VehicleFile }) {
+  const zones = new Set(file.damages.map((d) => d.zone)).size;
+  const paintFlags = file.paint.filter((p) => p.flagged).length;
+  const defects = file.features.filter((f) => f.result === 'DEFECT').length;
+  const ok = file.features.filter((f) => f.result === 'OK').length;
+  const notChecked = file.features.length - ok - defects;
+  const codes = dtcCount(file);
+  const tiles: { icon: LucideIcon; label: string; value: string; tone: 'ok' | 'warn' | 'none' }[] = [
+    {
+      icon: Tag,
+      label: 'Dokumentierte Schäden',
+      value: file.damages.length ? `${file.damages.length} in ${zones} Bereich${zones === 1 ? '' : 'en'}` : 'keine dokumentiert',
+      tone: file.damages.length ? 'warn' : 'ok',
+    },
+    {
+      icon: Droplet,
+      label: 'Lackmessung',
+      value: file.paint.length ? (paintFlags ? `${paintFlags} von ${file.paint.length} Messpunkten auffällig` : `${file.paint.length} Messpunkte unauffällig`) : 'nicht erfasst',
+      tone: file.paint.length ? (paintFlags ? 'warn' : 'ok') : 'none',
+    },
+    {
+      icon: Wrench,
+      label: 'Funktionsprüfung',
+      value: !file.features.length
+        ? 'nicht erfasst'
+        : [defects > 0 && `${defects} Mangel${defects === 1 ? '' : 'mängel'}`, ok > 0 && `${ok} in Ordnung`, notChecked > 0 && `${notChecked} nicht geprüft`].filter(Boolean).join(', '),
+      tone: defects > 0 ? 'warn' : ok > 0 ? 'ok' : 'none',
+    },
+    {
+      icon: Activity,
+      label: 'Diagnose (OBD)',
+      value: file.diagnostics.length ? (codes ? `${codes} Fehlercode${codes === 1 ? '' : 's'} gespeichert` : 'keine Fehlercodes') : 'nicht erfasst',
+      tone: file.diagnostics.length ? (codes ? 'warn' : 'ok') : 'none',
+    },
   ];
   return (
-    <dl className="grid gap-x-8 gap-y-0 text-[13px] @xl:grid-cols-2">
-      {rows.map(([k, v], i) => (
-        <div key={k} className={clsx('flex items-center justify-between gap-3 border-b border-slate-100 py-2', i === rows.length - 1 && '@xl:border-b-0')}>
-          <dt className="text-slate-500">{k}</dt>
-          <dd className="break-words text-right font-medium text-slate-900">{v}</dd>
+    <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2 @3xl:grid-cols-4" data-testid="condition-summary">
+      {tiles.map((t) => (
+        <div key={t.label} className={clsx('flex items-start gap-3 rounded-2xl border p-3.5', t.tone === 'warn' ? 'border-amber-200 bg-amber-50' : t.tone === 'ok' ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50')}>
+          <span className={clsx('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm', t.tone === 'warn' ? 'text-amber-600' : t.tone === 'ok' ? 'text-emerald-600' : 'text-slate-400')}>
+            <t.icon className="h-4.5 w-4.5" aria-hidden />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{t.label}</span>
+            <span className={clsx('block text-[13px] font-semibold leading-snug', t.tone === 'warn' ? 'text-amber-900' : t.tone === 'ok' ? 'text-emerald-900' : 'text-slate-600')}>{t.value}</span>
+          </span>
         </div>
       ))}
-    </dl>
+    </div>
   );
 }
 
-function GeneralInfo() {
+function TagChip({ children, strong }: { children: ReactNode; strong?: boolean }) {
+  return <span className={clsx('rounded-md px-2 py-1 text-[12px] font-semibold', strong ? 'bg-slate-950 text-white' : 'bg-white/90 text-slate-900')}>{children}</span>;
+}
+
+/** Skizze mit Markierungen, Schaden-Reiter und Fotos des gewählten Schadens (Wischen, Vollbild). */
+function DamageExplorer({ file }: { file: VehicleFile }) {
+  const damages = file.damages;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [photoIdx, setPhotoIdx] = useState(0);
+  const [lightbox, setLightbox] = useState(false);
+  const counts = useMemo(() => {
+    const c: Partial<Record<DamageZone, number>> = {};
+    for (const d of damages) c[d.zone] = (c[d.zone] ?? 0) + 1;
+    return c;
+  }, [damages]);
+  const selected = damages.find((d) => d.id === selectedId) ?? damages[0] ?? null;
+  const photos: GalleryPhoto[] = useMemo(() => (selected ? selected.photoIds.map((id) => ({ id, slot: 'DAMAGE' as PhotoSlot })) : []), [selected]);
+  const idx = Math.min(photoIdx, Math.max(0, photos.length - 1));
+  const select = (id: string) => {
+    setSelectedId(id);
+    setPhotoIdx(0);
+  };
+  const step = (d: 1 | -1) => photos.length > 1 && setPhotoIdx((i) => (i + d + photos.length) % photos.length);
+  const swipe = useSwipe(step);
+
+  if (!damages.length) {
+    return (
+      <p className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[14px] font-medium text-emerald-900">
+        <CircleCheck className="h-5 w-5 text-emerald-600" aria-hidden /> Bei der Aufnahme wurden keine Schäden dokumentiert.
+      </p>
+    );
+  }
   return (
-    <p className="text-[13px] leading-relaxed text-slate-600">
-      Das Fahrzeug kann zusätzliche, im Inserat nicht angegebene Gebrauchs- oder Verschleißspuren aufweisen, die dem Alter und der Laufleistung entsprechen (z. B. kleine Kratzer, Steinschläge).
-      Fahrzeugdokumente werden nach Zahlungseingang an den Käufer versendet; vorab stehen sie als digitale Kopie zur Verfügung. Angaben ohne Gewähr.
-    </p>
+    <div className="grid gap-5 @3xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div>
+        <p className="mb-2 text-[13px] text-slate-500">Bereich antippen, um Fotos und Beschreibung zu sehen.</p>
+        <DamageSketch
+          counts={counts}
+          selected={selected?.zone ?? null}
+          onSelect={(zone) => {
+            const d = damages.find((x) => x.zone === zone);
+            if (d) select(d.id);
+          }}
+        />
+        <p className="mt-2 flex items-center gap-1.5 text-[12px] text-slate-500">
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-500" aria-hidden /> Zahl = dokumentierte Schäden im Bereich
+        </p>
+      </div>
+      <div className="min-w-0">
+        <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-2" role="tablist" aria-label="Schäden">
+          {damages.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              role="tab"
+              aria-selected={d.id === selected?.id}
+              onClick={() => select(d.id)}
+              data-testid={`damage-tab-${d.id}`}
+              className={clsx(
+                'inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-[13px] font-semibold transition-colors',
+                d.id === selected?.id ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300',
+              )}
+            >
+              <AlertTriangle className={clsx('h-4 w-4', d.severity === 'HIGH' ? 'text-red-500' : 'text-amber-400')} aria-hidden />
+              {DAMAGE_ZONE_LABELS[d.zone]}
+            </button>
+          ))}
+        </div>
+        {selected && (
+          <div className="mt-2" data-testid="damage-detail">
+            {photos.length ? (
+              <div className="relative touch-pan-y select-none overflow-hidden rounded-2xl bg-slate-900" {...swipe}>
+                <button type="button" className="block w-full" onClick={() => setLightbox(true)} aria-label="Schadenfoto vergrößern">
+                  <img
+                    key={photos[idx]!.id}
+                    src={photoUrl(file.id, photos[idx]!.id, 'web')}
+                    alt={`${DAMAGE_ZONE_LABELS[selected.zone]}: ${DAMAGE_KIND_LABELS[selected.kind]}`}
+                    draggable={false}
+                    className="aspect-[16/10] w-full object-cover"
+                  />
+                </button>
+                <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-1.5">
+                  <TagChip strong>{DAMAGE_KIND_LABELS[selected.kind]}</TagChip>
+                  <TagChip>{DAMAGE_SEVERITY_LABELS[selected.severity]}</TagChip>
+                  {selected.size && <TagChip>{selected.size}</TagChip>}
+                </div>
+                <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                  <span className="tabular rounded-md bg-black/60 px-2 py-1 text-xs font-semibold text-white">
+                    {idx + 1}/{photos.length}
+                  </span>
+                  <button type="button" onClick={() => setLightbox(true)} className="rounded-md bg-black/60 p-1.5 text-white hover:bg-black/80" aria-label="Vollbild">
+                    <Expand className="h-4 w-4" />
+                  </button>
+                </div>
+                {photos.length > 1 && (
+                  <>
+                    <button type="button" onClick={() => step(-1)} aria-label="Vorheriges Schadenfoto" className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75">
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <button type="button" onClick={() => step(1)} aria-label="Nächstes Schadenfoto" className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75">
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex aspect-[16/7] items-center justify-center gap-2 rounded-2xl bg-slate-100 text-sm text-slate-500">
+                <ImageOff className="h-5 w-5" aria-hidden /> Zu diesem Schaden wurde kein Detailfoto aufgenommen.
+              </div>
+            )}
+            <div className="mt-3 rounded-2xl bg-slate-50 p-4 text-[14px] text-slate-800">
+              <p className="font-semibold text-slate-950">
+                {DAMAGE_ZONE_LABELS[selected.zone]} · {DAMAGE_KIND_LABELS[selected.kind]}
+                <span className="ml-2 font-normal text-slate-500">{DAMAGE_SEVERITY_LABELS[selected.severity]}</span>
+              </p>
+              <p className="mt-1">{selected.description || 'Keine weitere Beschreibung erfasst.'}</p>
+            </div>
+          </div>
+        )}
+        {lightbox && photos.length > 0 && <Lightbox vehicleId={file.id} photos={photos} index={idx} onIndex={setPhotoIdx} onClose={() => setLightbox(false)} />}
+      </div>
+    </div>
   );
 }
 
-/** Gesamte Fahrzeugakte als One-Pager (statt Reiter): alle Daten gestapelt in Karten. */
-export function AuctionOnePager({ file, state }: { file: VehicleFile; state: DealerAuctionState }) {
+const DOC_PRESENCE_KINDS: VehicleDocumentKind[] = ['REGISTRATION_1', 'REGISTRATION_2', 'SERVICE_BOOK', 'HU_REPORT', 'APPRAISAL'];
+
+/** Welche Dokumente digital in der Akte liegen (nur für Käufer freigegebene). „Nicht hinterlegt“ = keine digitale Kopie. */
+function DocumentsPresence({ file }: { file: VehicleFile }) {
+  const kinds = new Set(file.documents.map((d) => d.kind));
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 @2xl:grid-cols-5" data-testid="documents-presence">
+        {DOC_PRESENCE_KINDS.map((k) => {
+          const has = kinds.has(k);
+          return (
+            <div key={k} className="bg-white px-4 py-3.5">
+              <p className="text-[11px] font-semibold uppercase leading-tight tracking-wide text-slate-500">{VEHICLE_DOCUMENT_KIND_LABELS[k]}</p>
+              <p className={clsx('mt-1 flex items-center gap-1.5 text-[13px] font-medium', has ? 'text-emerald-700' : 'text-slate-500')}>
+                {has ? <CircleCheck className="h-4 w-4" aria-hidden /> : <Minus className="h-4 w-4" aria-hidden />}
+                {has ? 'Digital hinterlegt' : 'Nicht hinterlegt'}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      {file.documents.length > 0 && (
+        <div className="mt-4">
+          <DocumentsSection file={file} />
+        </div>
+      )}
+      <p className="mt-3 text-xs text-slate-500">„Nicht hinterlegt“ heißt: Für dieses Dokument liegt keine digitale Kopie in der Fahrzeugakte.</p>
+    </div>
+  );
+}
+
+/** Gesamte Fahrzeugakte als One-Pager: alle Daten gestapelt in Karten, Reihenfolge wie in der Vorlage. */
+export function AuctionOnePager({ file, state, notice }: { file: VehicleFile; state: DealerAuctionState; notice: string | null }) {
+  const inspected = file.inspectionCompletedAt
+    ? `Vom Außendienst der Plattform aufgenommen${file.approvedAt ? `, freigegeben am ${formatDateDe(file.approvedAt)}` : ''}.`
+    : undefined;
   return (
     <div className="space-y-3" id="fahrzeugakte">
       <Section id="daten" icon={Car} title="Fahrzeugdaten">
-        <VehicleDataGrid file={file} />
+        <VehicleDataGroups file={file} state={state} />
       </Section>
-      {file.equipment.length > 0 && (
-        <Section id="ausstattung" icon={Check} title="Ausstattung">
-          <EquipmentChecklist items={file.equipment} columns="@md:columns-2 @3xl:columns-3" />
-        </Section>
-      )}
-      <Section id="zustand" icon={ShieldCheck} title="Technischer Zustand">
-        <ConditionSection file={file} />
+      <Section id="zustand" icon={ShieldCheck} title="Fahrzeugzustand" subtitle={inspected}>
+        <ConditionSummary file={file} />
+      </Section>
+      <Section id="schaeden" icon={Tag} title={file.damages.length ? `Fahrzeugschäden (${file.damages.length})` : 'Fahrzeugschäden'}>
+        <DamageExplorer file={file} />
       </Section>
       {file.paint.length > 0 && (
         <Section id="lack" icon={Droplet} title="Lackschichtdicke">
           <PaintSection file={file} />
         </Section>
       )}
+      <Section id="technik" icon={Wrench} title="Technischer Zustand">
+        <ConditionSection file={file} />
+      </Section>
       {file.tires.length > 0 && (
         <Section id="reifen" icon={Disc3} title="Reifen">
           <TiresSection file={file} />
-        </Section>
-      )}
-      {file.damages.length > 0 && (
-        <Section id="schaeden" icon={Tag} title={`Schäden (${file.damages.length})`}>
-          <DamagesSection file={file} />
         </Section>
       )}
       {file.diagnostics.length > 0 && (
@@ -758,12 +957,22 @@ export function AuctionOnePager({ file, state }: { file: VehicleFile; state: Dea
           <DiagnosticsSection file={file} />
         </Section>
       )}
+      <Section id="dokumente" icon={FileText} title="Fahrzeugdokumente">
+        <DocumentsPresence file={file} />
+      </Section>
+      <Section id="ausstattung" icon={Check} title={file.equipment.length ? `Ausstattung (${file.equipment.length})` : 'Ausstattung'}>
+        <EquipmentChecklist items={file.equipment} columns="@md:columns-2 @3xl:columns-3" />
+      </Section>
       <Section id="standort" icon={MapPin} title="Standort">
         <LocationPanel state={state} />
       </Section>
-      <Section id="info" icon={Info} title="Allgemeine Informationen">
-        <GeneralInfo />
-      </Section>
+      {notice && (
+        <Section id="hinweise" icon={Megaphone} title="Hinweise des Betreibers">
+          <p className="whitespace-pre-line text-[14px] leading-relaxed text-slate-700" data-testid="operator-notice">
+            {notice}
+          </p>
+        </Section>
+      )}
     </div>
   );
 }

@@ -24,8 +24,9 @@ import { AppError, notFound, parse } from '../../core/errors';
 import { actorOf, getAuth, hashPassword, requireAdmin, requireSuperadmin, revokeUserSessions } from '../../core/auth';
 import { audit, diff } from '../../core/audit';
 import { receiveFile } from '../../core/upload';
-import { IMAGE_MIME, getObject, newStorageKey, putObject, signedUrl, validateUpload, malwareScanMode } from '../../core/storage';
+import { IMAGE_MIME, deleteObject, newStorageKey, putObject, signedUrl, validateUpload, malwareScanMode } from '../../core/storage';
 import { schedulerStatus } from '../auctions/scheduler';
+import { pendingLegalTemplates } from '../legal/service';
 import { config } from '../../config';
 import { getSettings, saveSettings } from '../../core/settings';
 import { retryJob } from '../../core/jobs';
@@ -434,11 +435,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const valid = await validateUpload(file.buffer, IMAGE_MIME);
     const key = newStorageKey('branding/logo', valid.ext);
     await putObject(key, file.buffer, valid.mime);
-    await db.transaction(async (tx) => {
-      const current = await getSettings(tx);
-      await saveSettings(tx, { ...current, platformLogoKey: key }, getAuth(req).userId);
-      await audit(tx, actorOf(req), { event: 'SETTINGS_CHANGED', entityType: 'settings', entityId: 'platform', newValue: { platformLogoKey: key } });
-    });
+    try {
+      await db.transaction(async (tx) => {
+        const current = await getSettings(tx);
+        await saveSettings(tx, { ...current, platformLogoKey: key }, getAuth(req).userId);
+        await audit(tx, actorOf(req), { event: 'SETTINGS_CHANGED', entityType: 'settings', entityId: 'platform', newValue: { platformLogoKey: key } });
+      });
+    } catch (err) {
+      await deleteObject(key).catch(() => undefined);
+      throw err;
+    }
     return reply.status(201).send(await getSettings());
   });
 
@@ -517,6 +523,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       overduePending: stuck.rows[0]?.n ?? 0,
       malwareScan: malwareScanMode,
       scheduler: { enabled: config.SCHEDULER_ENABLED, ...schedulerStatus },
+      // Rechtstexte, die noch Vorlagen sind: in Produktion sperren sie das Einplanen/Starten von Auktionen.
+      legalTemplates: await pendingLegalTemplates(db),
+      legalEnforced: config.NODE_ENV === 'production',
+      environment: config.NODE_ENV,
       serverTime: new Date().toISOString(),
     };
   });

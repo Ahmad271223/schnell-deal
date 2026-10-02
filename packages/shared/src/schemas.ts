@@ -486,8 +486,10 @@ export const settingsSchema = z.object({
   /** PDF-Branding des Plattformbetreibers (optional). */
   platformLogoKey: z.string().max(300),
   bankName: z.string().max(120),
-  iban: z.string().max(40),
-  bic: z.string().max(20),
+  iban: z.string().trim().max(40),
+  bic: z.string().trim().max(20),
+  /** Hinweistext des Betreibers unter jeder Auktion (z. B. zu Gebrauchsspuren, Dokumentenversand); leer = kein Abschnitt. Kein Rechtstext (§61). */
+  auctionNotice: z.string().max(2000),
 });
 export type PlatformSettings = z.infer<typeof settingsSchema>;
 
@@ -512,4 +514,5 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   bankName: '',
   iban: '',
   bic: '',
+  auctionNotice: '',
 };

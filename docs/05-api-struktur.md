@@ -39,7 +39,8 @@ Auth: Session-Cookie `sd_session` (httpOnly, Secure in prod, SameSite=Lax). Muti
 | GET/POST | /admin/dealer-groups | ADMIN | Händlergruppen |
 | PATCH/DELETE | /admin/dealer-groups/:id | ADMIN | |
 | PUT | /admin/dealer-groups/:id/members | ADMIN | Mitglieder setzen |
-| GET/PUT | /admin/settings | SUPERADMIN | Plattform-Einstellungen |
+| GET/PUT | /admin/settings | SUPERADMIN | Plattform-Einstellungen (inkl. Hinweistext unter Auktionen, Bankverbindung für PDFs) |
+| POST/DELETE | /admin/settings/logo | SUPERADMIN | Logo für den PDF-Kopf hochladen/entfernen; GET /admin/settings/logo/file (ADMIN) zeigt es |
 | GET/POST | /admin/legal | ADMIN | Rechtstexte versionieren |
 | GET | /admin/audit?entityType&entityId&event&from&to | ADMIN | Audit-Log |
 
@@ -66,6 +67,11 @@ Auth: Session-Cookie `sd_session` (httpOnly, Secure in prod, SameSite=Lax). Muti
 | POST | /vehicles/:id/photos (multipart) | INSPECTOR | Direkt-Upload-Alternative (kleine Dateien / Fallback) |
 | DELETE | /vehicles/:id/photos/:photoId | INSPECTOR (nicht gesperrt) | ersetzt Foto (Original bleibt, Flag `replaced_by`) |
 | GET | /vehicles/:id/photos/:photoId/url?variant=web|thumb|original | berechtigt | Signed URL |
+| POST | /vehicles/:id/media/video (multipart) | INSPECTOR (eigene, nicht gesperrte Akte) oder ADMIN | Motorvideo (MP4/WebM/MOV, bis `MAX_VIDEO_UPLOAD_MB`); ersetzt ein vorhandenes |
+| DELETE | /vehicles/:id/media/video | INSPECTOR (nicht gesperrt) oder ADMIN | Motorvideo entfernen |
+| GET | /vehicles/:id/media/video/file | berechtigt (Händler nur bei sichtbarer Auktion oder Kauf) | Weiterleitung auf Signed URL |
+| POST | /vehicles/:id/media/photo (multipart) | ADMIN | Foto nachreichen ohne Aufnahmeprozess (erstes = Kartenbild, Qualitätsprüfung aktiv) |
+| DELETE | /vehicles/:id/media/photo/:photoId | ADMIN | nachgereichtes Foto ausblenden (Original bleibt) |
 | POST | /vehicles/:id/documents | INSPECTOR/ADMIN | Dokument hochladen |
 | POST | /admin/vehicles/:id/documents/:docId/release | ADMIN | Käufer-Sichtbarkeit |
 | PUT | /vehicles/:id/damages | INSPECTOR | Schäden ersetzen/anlegen |
@@ -112,6 +118,9 @@ Auth: Session-Cookie `sd_session` (httpOnly, Secure in prod, SameSite=Lax). Muti
 | GET | /me/bids | Händler | eigene Gebote je Auktion mit Status |
 | GET | /me/auctions?state=won|lost|active | Händler | |
 | GET/PUT/DELETE | /watchlist(/:vehicleId) | Händler | Favoriten |
+| WS | /ws | angemeldet | Kanäle `user:*`, `admin`, `auction:*` nach Berechtigung; je Verbindung höchstens 200 Kanäle und 60 Nachrichten je 10 s (Close 4008), Gebote nie über den Socket |
+| GET | /auctions/summary | Händler | Kennzahlen der Startseite über alle sichtbaren Auktionen (aktiv, geplant, bald endend, neu in 24 h, Kataloge, führend, überboten, beobachtet) |
+| GET | /catalogs | Händler | Veröffentlichte Kataloge mit mindestens einer sichtbaren Auktion: Zahlen, erstes/letztes Auktionsende, Titelbild |
 | WS | /ws | auth | `subscribe {channel}`, Events `bid`, `extended`, `ended`, `started`, `cancelled`, `notification` |
 
 ## Deals, Dokumente, Abholung

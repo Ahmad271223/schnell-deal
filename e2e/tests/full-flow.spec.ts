@@ -15,7 +15,9 @@ const REQUIRED_SLOTS = [
   'Felge vorne links', 'Felge vorne rechts', 'Felge hinten links', 'Felge hinten rechts', 'Reifen vorne links', 'Reifen vorne rechts', 'Reifen hinten links', 'Reifen hinten rechts',
 ];
 const PAINT = ['Motorhaube', 'Kotflügel VL', 'Tür VL', 'Tür HL', 'Seitenteil HL', 'Kofferraumdeckel', 'Seitenteil HR', 'Tür HR', 'Tür VR', 'Kotflügel VR', 'Dach'];
-/** 30 Ausstattungsmerkmale: 22 erscheinen im Auszug der Übersicht, 8 hinter „Vollständige Ausstattung anzeigen“. */
+/** Minimaler MP4-Container (ftyp + leeres mdat): besteht die serverseitige Magic-Byte-Prüfung, ist aber nicht abspielbar. */
+const MP4_BYTES = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom', 'latin1'), Buffer.from([0, 0, 2, 0]), Buffer.from('isomiso2', 'latin1'), Buffer.from([0, 0, 0, 8]), Buffer.from('mdat', 'latin1')]);
+/** 30 Ausstattungsmerkmale, alle im One-Pager-Abschnitt „Ausstattung (30)“. */
 const EQUIPMENT = [
   'M-Sportpaket', 'LED-Scheinwerfer', 'Navigationssystem Professional', 'Head-Up Display', 'Sitzheizung vorne', 'Harman Kardon Soundsystem',
   'Rückfahrkamera', 'Parksensoren vorne & hinten', 'Spurhalteassistent', 'Keyless Go', 'Elektrische Heckklappe', 'Sportsitze', 'Panorama-Glasdach',
@@ -95,7 +97,7 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
 
   // ------------------------------------------------------------------ 3. Autohaus meldet Inzahlungnahmen
   await ah.goto('/autohaus');
-  await ah.getByRole('link', { name: /Inzahlungnahmen stehen bereit/ }).click();
+  await ah.getByRole('main').getByRole('link', { name: 'Inzahlungnahme melden', exact: true }).click();
   await expect(ah.getByLabel('Straße und Hausnummer')).toHaveValue('Hauptstraße 12');
   await ah.getByLabel('Anzahl Fahrzeuge').fill('1');
   await ah.getByRole('button', { name: 'Anfrage absenden' }).click();
@@ -195,7 +197,12 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
   // Schritt 12: Funktionsprüfung
   await insp.getByRole('button', { name: /als „nicht geprüft“ markieren/ }).click();
   await insp.getByRole('button', { name: /Speichern und weiter \(15\/15\)/ }).click();
-  // Schritt 13: Abschluss (wartet, bis alle Uploads übertragen sind)
+  // Schritt 13: Motorvideo (optional, läuft über die Upload-Warteschlange)
+  await insp.getByLabel('Video aus der Galerie wählen').setInputFiles({ name: 'motor.mp4', mimeType: 'video/mp4', buffer: MP4_BYTES });
+  await expect(insp.getByTestId('video-stored')).toBeVisible({ timeout: 60_000 });
+  await insp.getByRole('button', { name: 'Weiter', exact: true }).click();
+  // Schritt 14: Abschluss (wartet, bis alle Uploads übertragen sind)
+  await expect(insp.getByTestId('summary-video')).toHaveText(/vorhanden/);
   const finish = insp.getByRole('button', { name: 'Fahrzeugaufnahme abschließen' });
   await expect(finish).toBeEnabled({ timeout: 120_000 });
   await finish.click();
@@ -209,13 +216,20 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
   await admin.goto('/admin/pruefung');
   await admin.getByRole('link', { name: 'BMW 320d' }).click();
   await expect(admin.getByText(/Vollständigkeit: 100 %/).first()).toBeVisible();
+  await expect(admin.getByRole('tab', { name: 'Motorvideo' })).toBeVisible();
   await admin.getByRole('button', { name: 'Freigeben' }).click();
   await admin.waitForURL('**/admin/pruefung');
   // Katalog für die Brotkrumen der Auktionsseite („Hannover Auktion – Datum › Fahrzeug 1 von 1“).
   const catalogRes = await apiAs(adminContext, 'POST', '/admin/catalogs', { name: `Hannover Auktion ${tag.slice(-4)}`, startsAt: new Date(Date.now() + 86_400_000).toISOString() });
   expect(catalogRes.status(), await catalogRes.text()).toBe(201);
+  const catalogId = (await catalogRes.json()).id as string;
+  expect((await apiAs(adminContext, 'POST', `/admin/catalogs/${catalogId}/status`, { status: 'PUBLISHED' })).status()).toBe(200);
   await admin.goto('/admin/fahrzeuge');
   await admin.getByRole('link', { name: /BMW 320d/ }).click();
+  // Dokument für Käufer freigeben (erscheint dann auf der Auktionsseite als „digital hinterlegt“).
+  // Kontrolliertes Kästchen: Der Haken erscheint erst nach Serverantwort und Neuladen, daher click statt check.
+  await admin.getByRole('checkbox', { name: 'nur intern' }).click();
+  await expect(admin.getByRole('checkbox', { name: 'freigegeben' })).toBeChecked();
   await admin.getByRole('link', { name: 'Auktion anlegen' }).click();
   await admin.getByLabel('Katalog').selectOption({ label: `Hannover Auktion ${tag.slice(-4)}` });
   await admin.getByLabel('Startpreis (€)').fill('10000');
@@ -230,11 +244,24 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
   // ------------------------------------------------------------------ 7. Zwei Händler bieten live
   const A = await registerDealer(browser, adminContext, 1);
   const B = await registerDealer(browser, adminContext, 2);
+  // Startseite: Kennzahlen aus der Datenbank, Reihen zum Wischen (Kataloge, neu eingestellt), Karte führt zur Auktion.
+  await B.page.goto('/haendler');
+  await expect(B.page.getByTestId('hero-stats')).not.toContainText('…');
+  await expect(B.page.getByTestId('rail-catalogs')).toContainText(`Hannover Auktion ${tag.slice(-4)}`);
+  const newRail = B.page.getByTestId('rail-new');
+  await expect(newRail).toContainText('BMW 320d');
+  // Bildschirmfotos der Startseite (Desktop und Smartphone) zur Sichtprüfung.
+  await B.page.setViewportSize({ width: 1536, height: 1024 });
+  await B.page.screenshot({ path: 'test-results/startseite-1536.png', fullPage: true, animations: 'disabled' });
+  await B.page.setViewportSize({ width: 390, height: 844 });
+  await B.page.screenshot({ path: 'test-results/startseite-390.png', fullPage: true, animations: 'disabled' });
+  await B.page.setViewportSize({ width: 1280, height: 720 });
+  await newRail.getByRole('link', { name: /BMW 320d/ }).first().click();
+  await B.page.waitForURL(`**/haendler/auktionen/${auctionId}`);
   await A.page.goto(`/haendler/auktionen/${auctionId}`);
-  await B.page.goto(`/haendler/auktionen/${auctionId}`);
   await expect(B.page.getByRole('button', { name: 'Jetzt 10.000 € bieten' })).toBeVisible();
 
-  // Auktionsseite: Galerie, Eckdaten, Reiter, Standort, Favorit – alles bedienbar und mit echten Daten.
+  // Auktionsseite (One-Pager): Galerie, Eckdaten, Abschnitte, Schäden mit Skizze, Standort, Favorit – alles mit echten Daten.
   await expect(B.page.getByText('LIVE', { exact: true })).toBeVisible();
   await expect(B.page.getByRole('heading', { level: 1, name: 'BMW 320d Touring' })).toBeVisible();
   await expect(B.page.getByRole('navigation', { name: 'Brotkrumen' })).toContainText(`Hannover Auktion ${tag.slice(-4)}`);
@@ -242,28 +269,47 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
   const facts = B.page.locator('dl').filter({ hasText: 'Schadstoffklasse' }).first();
   await expect(facts).toContainText('Euro 6d');
   await expect(facts).toContainText('Gewerblich');
-  await expect(B.page.getByRole('tabpanel')).toContainText('Rückfahrkamera');
-  await expect(B.page.getByRole('button', { name: 'Vollständige Ausstattung anzeigen (8 weitere)' })).toBeVisible();
+  const section = (id: string) => B.page.getByTestId(`section-${id}`);
+  await expect(section('ausstattung')).toContainText('Ausstattung (30)');
+  await expect(section('ausstattung')).toContainText('Rückfahrkamera');
+  await expect(section('ausstattung')).toContainText('Notrufsystem');
   await B.page.getByRole('button', { name: 'Nächstes Bild' }).click();
   await expect(B.page.getByText(/^2 \/ \d+$/)).toBeVisible();
-  await B.page.getByRole('tab', { name: 'Schäden (1)' }).click();
-  await expect(B.page.getByRole('tabpanel')).toContainText('Kotflügel vorne rechts');
-  await B.page.getByRole('tab', { name: 'Reifen (4)' }).click();
-  await expect(B.page.getByRole('tabpanel')).toContainText('Vorne links');
+  // Medien-Umschalter: Zustandsbilder (Schadenfoto) und Motorvideo sind vorhanden.
+  await expect(B.page.getByTestId('media-tab-condition')).toBeVisible();
+  await B.page.getByTestId('media-tab-video').click();
+  await expect(B.page.getByTestId('engine-video')).toBeVisible();
+  await B.page.getByTestId('media-tab-images').click();
+  // Zustand: echte Zählwerte; Schäden: Reiter je Schaden mit Detailfoto und Beschreibung.
+  await expect(B.page.getByTestId('condition-summary')).toContainText('1 in 1 Bereich');
+  await expect(B.page.getByTestId('condition-summary')).toContainText('von 11 Messpunkten auffällig');
+  await expect(section('schaeden')).toContainText('Fahrzeugschäden (1)');
+  await expect(B.page.getByRole('tab', { name: 'Kotflügel vorne rechts' })).toHaveAttribute('aria-selected', 'true');
+  await expect(B.page.getByTestId('damage-detail')).toContainText('Delle');
+  await expect(B.page.getByTestId('damage-detail')).toContainText('ca. 3 cm');
+  await expect(B.page.getByTestId('damage-detail').getByRole('img')).toBeVisible();
+  await expect(section('reifen')).toContainText('Vorne links');
+  await expect(B.page.getByTestId('documents-presence')).toContainText('Digital hinterlegt');
   await B.page.getByRole('button', { name: 'Auf Karte ansehen' }).click();
-  await expect(B.page.getByRole('tab', { name: 'Standort' })).toHaveAttribute('aria-selected', 'true');
+  await expect(section('standort')).toBeInViewport();
   const favorite = B.page.getByRole('button', { name: 'Favorit', exact: true });
   await favorite.click();
   await expect(favorite).toHaveAttribute('aria-pressed', 'true');
   // Verkäuferidentität bleibt vor dem Zuschlag verborgen (§3.3).
   await expect(B.page.getByText(dealershipName)).toHaveCount(0);
   // Bildschirmfotos zur Sichtprüfung in typischen Breiten (Artefakte, keine Prüfung).
-  await B.page.getByRole('tab', { name: 'Übersicht' }).click();
   for (const [width, height] of [[1536, 1024], [1920, 1080], [1366, 768]] as const) {
     await B.page.setViewportSize({ width, height });
     await B.page.evaluate(() => window.scrollTo(0, 0));
     await B.page.screenshot({ path: `test-results/auktionsseite-${width}.png` });
   }
+  await B.page.setViewportSize({ width: 1536, height: 1024 });
+  await B.page.screenshot({ path: 'test-results/auktionsseite-1536-komplett.png', fullPage: true });
+  // Smartphone: Klebeleiste mit Preis und „Zum Gebot“ erscheint, sobald das Bietpanel aus dem Bild ist.
+  await B.page.setViewportSize({ width: 390, height: 844 });
+  await B.page.getByTestId('section-zustand').scrollIntoViewIfNeeded();
+  await expect(B.page.getByTestId('sticky-bid-bar')).toBeVisible();
+  await B.page.screenshot({ path: 'test-results/auktionsseite-390.png' });
   await B.page.setViewportSize({ width: 1280, height: 720 });
 
   const placeBid = async (p: Page, amountLabel: string) => {
@@ -346,7 +392,7 @@ test('Kompletter Ablauf von der Registrierung bis zur Abholung', async ({ browse
 
   // ------------------------------------------------------------------ 11. Statistik und Audit-Log
   await ah.goto('/autohaus');
-  const soldKpi = ah.locator('div.rounded-lg', { has: ah.getByText('Verkauft', { exact: true }) }).first();
+  const soldKpi = ah.locator('div.rounded-xl', { has: ah.getByText('Verkauft', { exact: true }) }).first();
   await expect(soldKpi).toContainText('1');
   await admin.goto('/admin/audit');
   await admin.getByLabel('Ereignis').selectOption('DEAL_CREATED');

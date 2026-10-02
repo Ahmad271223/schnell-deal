@@ -24,6 +24,11 @@ const LEGAL_TEMPLATES: Record<LegalKind, { title: string; content: string }> = {
     content:
       '[VORLAGE – NICHT RECHTSVERBINDLICH]\n\nDieser Text ist ein Platzhalter. Die Datenschutzerklärung wird vom Plattformbetreiber nach juristischer Prüfung im Administrationsbereich als neue Version hinterlegt.',
   },
+  IMPRINT: {
+    title: 'Impressum (Vorlage)',
+    content:
+      '[VORLAGE – NICHT RECHTSVERBINDLICH]\n\nDieser Text ist ein Platzhalter. Das Impressum (Anbieterkennzeichnung nach § 5 DDG: Firma, Anschrift, Vertretungsberechtigte, Kontakt, Registergericht und -nummer, Umsatzsteuer-ID) trägt der Plattformbetreiber im Administrationsbereich als neue Version ein.',
+  },
 };
 
 export async function ensureLegalTemplates(tx: DbOrTx): Promise<void> {

@@ -31,7 +31,7 @@ import { AppError, notFound, parse } from '../../core/errors';
 import { actorOf, getAuth, isAdmin, requireAdmin, requireAuth, requireInspectorOrAdmin } from '../../core/auth';
 import { audit } from '../../core/audit';
 import { receiveFile } from '../../core/upload';
-import { DOCUMENT_MIME, IMAGE_MIME, VIDEO_MIME, getObject, newStorageKey, putObject, signedUrl, validateUpload } from '../../core/storage';
+import { DOCUMENT_MIME, IMAGE_MIME, VIDEO_MIME, deleteObject, newStorageKey, putObject, signedUrl, validateUpload } from '../../core/storage';
 import { enqueue } from '../../core/jobs';
 import { getSettings } from '../../core/settings';
 import { publish, channels } from '../../core/realtime';
@@ -41,6 +41,7 @@ import { buildVehicleFile, type Audience } from './presenter';
 import {
   assertPhotosBelong,
   findVinDuplicates,
+  INSPECTOR_EDITABLE,
   loadForInspection,
   loadVehicle,
   recomputeCompleteness,
@@ -49,7 +50,7 @@ import {
   vehicleVisibility,
 } from './service';
 import { buyerCanSeeVehicle } from '../auctions/access';
-import { rateMax } from '../../config';
+import { config, rateMax } from '../../config';
 
 const vid = (req: FastifyRequest) => parse(uuidSchema, (req.params as { id: string }).id);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,6 +67,28 @@ async function afterChange(tx: DbOrTx, vehicleId: string) {
   const c = await recomputeCompleteness(tx, vehicleId);
   await publish(tx, channels.admin(), 'vehicle.updated', { id: vehicleId, completenessPct: c.percent });
   return c;
+}
+
+/**
+ * Berechtigung prüfen, bevor Virenscan, Bildanalyse und Speichern Ressourcen belegen (Außendienst nur für eigene, nicht
+ * gesperrte Akten). Die anschließende Schreibtransaktion prüft erneut mit Zeilensperre.
+ */
+async function assertUploadAllowed(req: FastifyRequest, id: string): Promise<void> {
+  const v = await loadVehicle(db, req, id);
+  if (isAdmin(getAuth(req))) return;
+  if (!INSPECTOR_EDITABLE.includes(v.status) || v.lockedAt) {
+    throw new AppError(409, 'VEHICLE_LOCKED', 'Die Fahrzeugakte ist abgeschlossen und gesperrt. Änderungen sind nur noch als nachvollziehbare Korrektur durch den Administrator möglich.');
+  }
+}
+
+/** Schreibtransaktion nach dem Speichern eines Objekts: scheitert sie, wird das Objekt wieder entfernt (keine Waisen). */
+async function withStoredObject<T>(key: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    await deleteObject(key).catch(() => undefined);
+    throw err;
+  }
 }
 
 export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
@@ -264,12 +287,13 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       await loadVehicle(db, req, id);
       return reply.status(200).send(photoResponse(already, true));
     }
+    await assertUploadAllowed(req, id);
     const valid = await validateUpload(file.buffer, IMAGE_MIME);
     const q = await analyzePhoto(file.buffer);
     const key = newStorageKey(`vehicles/${id}/original`, valid.ext);
     await putObject(key, file.buffer, valid.mime);
 
-    const result = await db.transaction(async (tx) => {
+    const result = await withStoredObject(key, () => db.transaction(async (tx) => {
       const v = await loadForInspection(tx, req, id);
       const [dupContent] = await tx
         .select({ id: schema.vehiclePhotos.id, slot: schema.vehiclePhotos.slot })
@@ -335,7 +359,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       await enqueue(tx, 'image.process', { photoId: photo!.id }, { dedupeKey: `image:${photo!.id}` });
       const completeness = await afterChange(tx, id);
       return { photo: photo!, completeness };
-    });
+    }));
     return reply.status(201).send({ ...photoResponse(result.photo, false), completeness: result.completeness });
   });
 
@@ -389,7 +413,9 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
     return reply.redirect(await signedUrl(key));
   });
 
-  // ---------- Direkter Medien-Upload (Admin): Fotos & Motor-Video ohne Aufnahmeprozess ----------
+  // ---------- Direkter Foto-Upload (Admin): Fotos nachreichen ohne Aufnahmeprozess ----------
+  // Die Qualitätsprüfung bleibt aktiv (keine stille Übersteuerung); ein mangelhaftes Foto muss der Admin
+  // wie jedes andere ausdrücklich mit Begründung übersteuern oder ersetzen (§11).
   app.post('/vehicles/:id/media/photo', { preHandler: requireAdmin, config: { rateLimit: { max: rateMax(300), timeWindow: '1 minute' } } }, async (req, reply) => {
     const id = vid(req);
     const file = await receiveFile(req);
@@ -397,7 +423,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
     const q = await analyzePhoto(file.buffer);
     const key = newStorageKey(`vehicles/${id}/original`, valid.ext);
     await putObject(key, file.buffer, valid.mime);
-    const result = await db.transaction(async (tx) => {
+    const result = await withStoredObject(key, () => db.transaction(async (tx) => {
       await loadVehicle(tx, req, id);
       // Erstes Bild belegt den Katalog-Slot (FRONT_LEFT_45 = Kartenbild), weitere als EXTRA.
       const [hasMain] = await tx
@@ -419,7 +445,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
           sha256: valid.sha256,
           quality: q.quality,
           qualityMetrics: q.metrics,
-          qualityOverride: true,
+          qualityOverride: false,
           uploadStatus: 'UPLOADED',
           uploadedBy: getAuth(req).userId,
         })
@@ -427,7 +453,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       await audit(tx, actorOf(req), { event: 'VEHICLE_PHOTO_UPLOADED', entityType: 'vehicle', entityId: id, newValue: { photoId: photo!.id, slot, source: 'admin_media' } });
       await enqueue(tx, 'image.process', { photoId: photo!.id }, { dedupeKey: `image:${photo!.id}` });
       return photo!;
-    });
+    }));
     return reply.status(201).send({ id: result.id, slot: result.slot });
   });
 
@@ -445,26 +471,44 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  app.post('/vehicles/:id/media/video', { preHandler: requireAdmin }, async (req, reply) => {
+  // ---------- Motorvideo ----------
+  // Außendienst (während der Aufnahme, Akte nicht gesperrt) oder Admin (jederzeit, z. B. nachgereicht).
+  // Ein Fahrzeug hat höchstens ein Video; ein neuer Upload ersetzt das alte, das Objekt bleibt im Speicher (Audit).
+  const videoAccess = async (tx: DbOrTx, req: FastifyRequest, id: string) => {
+    if (isAdmin(getAuth(req))) return loadVehicle(tx, req, id, { forUpdate: true });
+    const v = await loadForInspection(tx, req, id);
+    await touchInspection(tx, req, v);
+    return v;
+  };
+
+  app.post('/vehicles/:id/media/video', { preHandler: requireInspectorOrAdmin, config: { rateLimit: { max: rateMax(30), timeWindow: '1 minute' } } }, async (req, reply) => {
     const id = vid(req);
-    const file = await receiveFile(req);
-    const valid = await validateUpload(file.buffer, VIDEO_MIME);
+    const file = await receiveFile(req, { maxMb: config.MAX_VIDEO_UPLOAD_MB });
+    await assertUploadAllowed(req, id);
+    const valid = await validateUpload(file.buffer, VIDEO_MIME, { maxMb: config.MAX_VIDEO_UPLOAD_MB });
     const key = newStorageKey(`vehicles/${id}/video`, valid.ext);
     await putObject(key, file.buffer, valid.mime);
-    await db.transaction(async (tx) => {
-      await loadVehicle(tx, req, id);
+    await withStoredObject(key, () => db.transaction(async (tx) => {
+      const v = await videoAccess(tx, req, id);
       await tx.update(schema.vehicles).set({ engineVideoKey: key, engineVideoMime: valid.mime, updatedAt: new Date() }).where(eq(schema.vehicles.id, id));
-      await audit(tx, actorOf(req), { event: 'VEHICLE_UPDATED', entityType: 'vehicle', entityId: id, newValue: { engineVideo: true, mime: valid.mime, source: 'admin_media' } });
-    });
-    return reply.status(201).send({ ok: true });
+      await audit(tx, actorOf(req), {
+        event: 'VEHICLE_UPDATED',
+        entityType: 'vehicle',
+        entityId: id,
+        oldValue: { engineVideo: !!v.engineVideoKey },
+        newValue: { engineVideo: true, mime: valid.mime, sizeBytes: valid.size, sha256: valid.sha256 },
+      });
+    }));
+    return reply.status(201).send({ ok: true, mime: valid.mime, sizeBytes: valid.size });
   });
 
-  app.delete('/vehicles/:id/media/video', { preHandler: requireAdmin }, async (req) => {
+  app.delete('/vehicles/:id/media/video', { preHandler: requireInspectorOrAdmin }, async (req) => {
     const id = vid(req);
     return db.transaction(async (tx) => {
-      await loadVehicle(tx, req, id);
+      const v = await videoAccess(tx, req, id);
+      if (!v.engineVideoKey) throw notFound('Video');
       await tx.update(schema.vehicles).set({ engineVideoKey: null, engineVideoMime: null, updatedAt: new Date() }).where(eq(schema.vehicles.id, id));
-      await audit(tx, actorOf(req), { event: 'VEHICLE_UPDATED', entityType: 'vehicle', entityId: id, newValue: { engineVideo: false, source: 'admin_media' } });
+      await audit(tx, actorOf(req), { event: 'VEHICLE_UPDATED', entityType: 'vehicle', entityId: id, oldValue: { engineVideo: true }, newValue: { engineVideo: false } });
       return { ok: true };
     });
   });
@@ -495,10 +539,11 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       await loadVehicle(db, req, id);
       return reply.status(200).send({ id: already.id, duplicate: true });
     }
+    await assertUploadAllowed(req, id);
     const valid = await validateUpload(file.buffer, DOCUMENT_MIME);
     const key = newStorageKey(`vehicles/${id}/documents`, valid.ext);
     await putObject(key, file.buffer, valid.mime);
-    const doc = await db.transaction(async (tx) => {
+    const doc = await withStoredObject(key, () => db.transaction(async (tx) => {
       const v = await loadForInspection(tx, req, id);
       await touchInspection(tx, req, v);
       const [d] = await tx
@@ -525,7 +570,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       });
       await afterChange(tx, id);
       return d!;
-    });
+    }));
     return reply.status(201).send({ id: doc.id, duplicate: false });
   });
 

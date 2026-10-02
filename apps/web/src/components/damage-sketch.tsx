@@ -59,8 +59,8 @@ export function DamageSketch({
           const isSel = selected === zone;
           const common = {
             className: clsx(!readOnly && 'cursor-pointer outline-none', 'transition-colors'),
-            fill: isSel ? '#2f6be6' : n > 0 ? '#fca5a5' : '#e2e8f0',
-            stroke: isSel ? '#1b45a3' : n > 0 ? '#b91c1c' : '#94a3b8',
+            fill: isSel ? '#dc2626' : n > 0 ? '#fecaca' : '#e2e8f0',
+            stroke: isSel ? '#991b1b' : n > 0 ? '#b91c1c' : '#94a3b8',
             strokeWidth: isSel || n > 0 ? 2 : 1,
           };
           const label = `${DAMAGE_ZONE_LABELS[zone]}${n ? `, ${n} Schaden/Schäden erfasst` : ''}`;

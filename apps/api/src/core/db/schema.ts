@@ -1064,6 +1064,8 @@ export const jobs = pgTable(
     dedupeKey: text('dedupe_key'),
     /** Kleinere Zahl = früher. Geschäftskritische Jobs (Deal-PDFs, Bildverarbeitung) vor Benachrichtigungen. */
     priority: integer('priority').notNull().default(100),
+    /** Zwischenstand eines Laufs (z. B. bereits bediente Push-Abonnements), damit Wiederholungen nichts doppelt tun. */
+    checkpoint: jsonb('checkpoint').$type<Record<string, unknown>>(),
     createdAt: createdAt(),
     finishedAt: ts('finished_at'),
   },
