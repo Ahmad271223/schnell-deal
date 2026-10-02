@@ -1,0 +1,20 @@
+{
+  "name": "Schnell-Deal – B2B Fahrzeugauktionen",
+  "short_name": "Schnell-Deal",
+  "description": "Fahrzeugaufnahme, Auktionen und Abwicklung für Autohäuser und Händler",
+  "lang": "de",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f9",
+  "theme_color": "#1b45a3",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Heute (Außendienst)", "url": "/aussendienst" },
+    { "name": "Auktionen", "url": "/haendler" }
+  ]
+}

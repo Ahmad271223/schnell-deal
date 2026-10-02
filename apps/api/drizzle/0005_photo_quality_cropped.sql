@@ -1,0 +1,1 @@
+ALTER TYPE "public"."photo_quality" ADD VALUE 'CROPPED';

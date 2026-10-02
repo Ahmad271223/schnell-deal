@@ -1,0 +1,18 @@
+# Build-Kontext schlank und frei von Geheimnissen halten
+.git
+.claude
+**/node_modules
+**/.next
+**/.next-*
+**/dist
+**/.turbo
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+infra/env/*.env
+backups
+docs
+e2e
+**/test-results
+**/playwright-report

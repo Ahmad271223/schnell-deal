@@ -1,0 +1,16 @@
+node_modules
+.next
+dist
+.env
+.env.local
+coverage
+playwright-report
+test-results
+*.log
+backups/
+.next-e2e
+e2e/test-results
+e2e/playwright-report
+.env.e2e
+infra/env/*.env
+!infra/env/*.env.example

@@ -1,0 +1,209 @@
+name: schnelldeal
+
+# Datenbank-Passwort und Bindung des Postgres-Ports kommen aus einer .env-Datei neben dieser Datei
+# (POSTGRES_PASSWORD, POSTGRES_BIND). Standard: Passwort "schnelldeal", Port nur auf 127.0.0.1 erreichbar.
+services:
+  # WAL-Archivierung ist aktiv: Jedes abgeschlossene WAL-Segment (bei Aktivität spätestens alle 5 Minuten) wird in das
+  # Archiv-Volume kopiert. Zusammen mit den Basissicherungen des Dienstes "backup" ermöglicht das Point-in-Time-Recovery
+  # (scripts/pitr-restore-test.sh).
+  postgres:
+    image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300
+      - -c
+      - archive_command=test ! -f /wal-archive/%f && cp %p /wal-archive/%f.tmp && mv /wal-archive/%f.tmp /wal-archive/%f
+    environment:
+      POSTGRES_USER: schnelldeal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-schnelldeal}
+      POSTGRES_DB: schnelldeal
+    ports:
+      - "${POSTGRES_BIND:-127.0.0.1}:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - walarchive:/wal-archive
+      - ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./infra/postgres-init-hba.sh:/docker-entrypoint-initdb.d/02-hba.sh:ro
+    depends_on:
+      walarchive-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schnelldeal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Das Archiv-Volume muss dem Datenbankbenutzer (uid 70 im Alpine-Image) gehören, sonst schlägt die Archivierung still fehl.
+  walarchive-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "mkdir -p /wal-archive/base && chown -R 70:70 /wal-archive && chmod 750 /wal-archive"]
+    volumes:
+      - walarchive:/wal-archive
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: schnelldeal
+      MINIO_ROOT_PASSWORD: schnelldeal-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 schnelldeal schnelldeal-secret &&
+      mc mb --ignore-existing local/schnelldeal-private &&
+      mc mb --ignore-existing local/schnelldeal-test &&
+      mc mb --ignore-existing local/schnelldeal-backups &&
+      mc version enable local/schnelldeal-private &&
+      mc version enable local/schnelldeal-backups &&
+      mc anonymous set none local/schnelldeal-private &&
+      mc anonymous set none local/schnelldeal-test &&
+      mc anonymous set none local/schnelldeal-backups &&
+      echo 'buckets ready'
+      "
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  # Virenscanner für Uploads (Spezifikation §44). Lokal: docker compose --profile scan up -d clamav und CLAMAV_HOST=localhost.
+  # Der erste Start lädt die Signaturen (einige Minuten); bis dahin ist der Dienst "starting" und Uploads werden abgewiesen (fail closed).
+  clamav:
+    profiles: ["app", "scan"]
+    image: clamav/clamav:stable
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamdb:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 600s
+    restart: unless-stopped
+
+  # --- staging / production: containerisierte Anwendung (docker compose --profile app --env-file infra/env/<umgebung>.env up -d) ---
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: ${APP_ENV_FILE:-infra/env/staging.env}
+    environment:
+      WORKER_MODE: separate
+      TRUST_PROXY: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker.js"]
+    env_file: ${APP_ENV_FILE:-infra/env/staging.env}
+    environment:
+      WORKER_MODE: separate
+      SCHEDULER_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:4000
+        CSP_STORAGE_ORIGIN: ${CSP_STORAGE_ORIGIN:-https://storage.localhost}
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    profiles: ["app"]
+    image: caddy:2-alpine
+    env_file: ${APP_ENV_FILE:-infra/env/staging.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+
+  # Tägliches pg_dump-Backup, wöchentliche Basissicherung für Point-in-Time-Recovery, optional Kopie außer Haus (rclone).
+  # Wiederherstellung: scripts/restore-test.sh (Dump) und scripts/pitr-restore-test.sh (Zeitpunkt-Wiederherstellung).
+  backup:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: infra/backup/Dockerfile
+    env_file: ${APP_ENV_FILE:-infra/env/staging.env}
+    environment:
+      PGHOST: postgres
+      PGUSER: schnelldeal
+      PGPASSWORD: ${POSTGRES_PASSWORD:-schnelldeal}
+      PGDATABASE: schnelldeal
+      BACKUP_DIR: /backups
+      WAL_ARCHIVE_DIR: /wal-archive
+    volumes:
+      - ./backups:/backups
+      - walarchive:/wal-archive
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Zeitpunkt-Wiederherstellung in einen Wegwerf-Container (nur über scripts/pitr-restore-test.sh gestartet).
+  pitr-restore:
+    profiles: ["pitr"]
+    image: postgres:16-alpine
+    environment:
+      WAL_ARCHIVE_DIR: /wal-archive
+    volumes:
+      - walarchive:/wal-archive:ro
+      - ./scripts/pitr-restore.sh:/pitr-restore.sh:ro
+    entrypoint: ["/bin/sh", "/pitr-restore.sh"]
+
+volumes:
+  pgdata:
+  walarchive:
+  miniodata:
+  caddydata:
+  clamdb:

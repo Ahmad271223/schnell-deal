@@ -1,0 +1,37 @@
+{
+  "name": "schnell-deal",
+  "private": true,
+  "packageManager": "pnpm@10.26.1",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint packages/shared/src apps/api/src apps/api/test apps/web/src e2e/tests",
+    "test": "pnpm --filter @sd/shared --fail-if-no-match test && pnpm --filter @sd/api --fail-if-no-match test",
+    "db:migrate": "pnpm --filter @sd/api --fail-if-no-match db:migrate",
+    "db:seed": "pnpm --filter @sd/api --fail-if-no-match db:seed",
+    "test:concurrency": "pnpm --filter @sd/api --fail-if-no-match test:concurrency",
+    "test:e2e": "pnpm --filter @sd/e2e --fail-if-no-match test",
+    "loadtest": "pnpm --filter @sd/api --fail-if-no-match loadtest",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:concurrency",
+    "backup": "bash scripts/backup.sh",
+    "restore-test": "bash scripts/restore-test.sh"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "esbuild"
+    ],
+    "overrides": {
+      "postcss": "^8.5.23"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^15.5.27",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "typescript-eslint": "^8.71.0"
+  }
+}
