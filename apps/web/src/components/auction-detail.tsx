@@ -8,26 +8,35 @@
  */
 import clsx from 'clsx';
 import Link from 'next/link';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  Activity,
   CalendarDays,
   Car,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  ClipboardCheck,
   Cog,
+  Disc3,
+  Droplet,
+  FileText,
   Forward,
   Fuel,
   Gauge,
   Home,
   IdCard,
   ImageOff,
+  Images,
+  Info,
   Mail,
   MapPin,
   Phone,
+  PlayCircle,
   ShieldCheck,
   Star,
+  Tag,
   UserRound,
   type LucideIcon,
 } from 'lucide-react';
@@ -45,7 +54,7 @@ import {
   TRANSMISSION_LABELS,
   type PhotoSlot,
 } from '@sd/shared';
-import { photoUrl } from '@/lib/api';
+import { photoUrl, vehicleVideoUrl } from '@/lib/api';
 import type { AuctionCatalogContext, DealerAuctionDetail, DealerAuctionState, VehicleFile } from '@/lib/types';
 import { Lightbox, type GalleryPhoto } from './photo-gallery';
 import { ConditionSection, DamagesSection, DiagnosticsSection, DocumentsSection, dtcCount, formatHu, PaintSection, TiresSection } from './vehicle-file';
@@ -600,5 +609,161 @@ export function LocationCard({ state, contact, onShowMap }: { state: DealerAucti
         </div>
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------- One-Pager (Apple-Karten-Stil)
+
+/** Karten-Abschnitt im modernen „Apple"-Look: runde Ecken, dezenter Rahmen, großzügiger Abstand. */
+export function Section({ id, icon: Icon, title, action, children }: { id?: string; icon?: LucideIcon; title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className="@container scroll-mt-20 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6" data-testid={id ? `section-${id}` : undefined}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 font-display text-[17px] font-bold tracking-tight text-slate-950">
+          {Icon && <Icon className="h-5 w-5 text-brand-600" aria-hidden />} {title}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+type MediaKind = 'images' | 'condition' | 'documents' | 'video';
+
+/** Medienbereich mit Umschaltern oben: Alle Bilder · Zustandsbilder · Dokumente · Motorvideo. */
+export function AuctionMedia({ file, live }: { file: VehicleFile; live: boolean }) {
+  const conditionPhotos: GalleryPhoto[] = useMemo(() => {
+    const ids = new Set<string>();
+    for (const d of file.damages) for (const pid of d.photoIds) ids.add(pid);
+    for (const p of file.photos) if (!p.replaced && p.slot === 'DAMAGE') ids.add(p.id);
+    return Array.from(ids).map((pid) => ({ id: pid, slot: 'DAMAGE' as PhotoSlot }));
+  }, [file.damages, file.photos]);
+  const tabs = [
+    { id: 'images' as MediaKind, label: 'Alle Bilder', icon: Images, show: true },
+    { id: 'condition' as MediaKind, label: 'Zustandsbilder', icon: ClipboardCheck, show: conditionPhotos.length > 0 },
+    { id: 'documents' as MediaKind, label: 'Dokumente', icon: FileText, show: file.documents.length > 0 },
+    { id: 'video' as MediaKind, label: 'Motorvideo', icon: PlayCircle, show: !!file.hasEngineVideo },
+  ].filter((t) => t.show);
+  const [kind, setKind] = useState<MediaKind>('images');
+  const active = tabs.some((t) => t.id === kind) ? kind : 'images';
+  return (
+    <div>
+      <div role="tablist" aria-label="Medien" className="mb-2.5 flex gap-1 overflow-x-auto border-b border-slate-200">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active === t.id}
+            onClick={() => setKind(t.id)}
+            data-testid={`media-tab-${t.id}`}
+            className={clsx(
+              '-mb-px inline-flex items-center gap-1.5 whitespace-nowrap border-b-[3px] px-3.5 py-2.5 text-[13px] transition-colors',
+              active === t.id ? 'border-brand-600 font-semibold text-slate-950' : 'border-transparent text-slate-600 hover:text-slate-950',
+            )}
+          >
+            <t.icon className="h-4 w-4" aria-hidden /> {t.label}
+          </button>
+        ))}
+      </div>
+      {active === 'images' && <AuctionGallery vehicleId={file.id} photos={file.photos} live={live} />}
+      {active === 'condition' && <AuctionGallery vehicleId={file.id} photos={conditionPhotos} live={false} />}
+      {active === 'documents' && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <DocumentsSection file={file} />
+        </div>
+      )}
+      {active === 'video' && (
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-black" data-testid="engine-video">
+          <video src={vehicleVideoUrl(file.id)} controls preload="metadata" playsInline className="aspect-video w-full bg-black" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Fahrzeugdaten als zweispaltige Liste. */
+function VehicleDataGrid({ file }: { file: VehicleFile }) {
+  const rows: [string, string][] = [
+    ['Marke', file.make ?? '–'],
+    ['Modell', file.model ?? '–'],
+    ['Ausstattungslinie', file.variant ?? '–'],
+    ['Erstzulassung', monthYear(file.firstRegistration)],
+    ['Kilometerstand', formatKm(file.mileageKm)],
+    ['Kraftstoff', file.fuel ? FUEL_LABELS[file.fuel] : '–'],
+    ['Getriebe', file.transmission ? TRANSMISSION_LABELS[file.transmission] : '–'],
+    ['Leistung', file.powerKw ? `${file.powerKw} kW (${file.powerPs} PS)` : '–'],
+    ['Farbe', file.color ?? '–'],
+    ['Karosserie', file.body ? BODY_LABELS[file.body] : '–'],
+    ['Türen / Sitzplätze', `${file.doors ?? '–'} / ${file.seats ?? '–'}`],
+    ['Vorbesitzer', file.ownersCount !== null ? String(file.ownersCount) : '–'],
+    ['HU bis', formatHu(file.huUntil)],
+    ['Schadstoffklasse', file.emissionClass ? EMISSION_CLASS_LABELS[file.emissionClass] : '–'],
+    ['FIN', file.vin ?? '–'],
+  ];
+  return (
+    <dl className="grid gap-x-8 gap-y-0 text-[13px] @xl:grid-cols-2">
+      {rows.map(([k, v], i) => (
+        <div key={k} className={clsx('flex items-center justify-between gap-3 border-b border-slate-100 py-2', i === rows.length - 1 && '@xl:border-b-0')}>
+          <dt className="text-slate-500">{k}</dt>
+          <dd className="break-words text-right font-medium text-slate-900">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function GeneralInfo() {
+  return (
+    <p className="text-[13px] leading-relaxed text-slate-600">
+      Das Fahrzeug kann zusätzliche, im Inserat nicht angegebene Gebrauchs- oder Verschleißspuren aufweisen, die dem Alter und der Laufleistung entsprechen (z. B. kleine Kratzer, Steinschläge).
+      Fahrzeugdokumente werden nach Zahlungseingang an den Käufer versendet; vorab stehen sie als digitale Kopie zur Verfügung. Angaben ohne Gewähr.
+    </p>
+  );
+}
+
+/** Gesamte Fahrzeugakte als One-Pager (statt Reiter): alle Daten gestapelt in Karten. */
+export function AuctionOnePager({ file, state }: { file: VehicleFile; state: DealerAuctionState }) {
+  return (
+    <div className="space-y-3" id="fahrzeugakte">
+      <Section id="daten" icon={Car} title="Fahrzeugdaten">
+        <VehicleDataGrid file={file} />
+      </Section>
+      {file.equipment.length > 0 && (
+        <Section id="ausstattung" icon={Check} title="Ausstattung">
+          <EquipmentChecklist items={file.equipment} columns="@md:columns-2 @3xl:columns-3" />
+        </Section>
+      )}
+      <Section id="zustand" icon={ShieldCheck} title="Technischer Zustand">
+        <ConditionSection file={file} />
+      </Section>
+      {file.paint.length > 0 && (
+        <Section id="lack" icon={Droplet} title="Lackschichtdicke">
+          <PaintSection file={file} />
+        </Section>
+      )}
+      {file.tires.length > 0 && (
+        <Section id="reifen" icon={Disc3} title="Reifen">
+          <TiresSection file={file} />
+        </Section>
+      )}
+      {file.damages.length > 0 && (
+        <Section id="schaeden" icon={Tag} title={`Schäden (${file.damages.length})`}>
+          <DamagesSection file={file} />
+        </Section>
+      )}
+      {file.diagnostics.length > 0 && (
+        <Section id="diagnose" icon={Activity} title="Diagnose">
+          <DiagnosticsSection file={file} />
+        </Section>
+      )}
+      <Section id="standort" icon={MapPin} title="Standort">
+        <LocationPanel state={state} />
+      </Section>
+      <Section id="info" icon={Info} title="Allgemeine Informationen">
+        <GeneralInfo />
+      </Section>
+    </div>
   );
 }

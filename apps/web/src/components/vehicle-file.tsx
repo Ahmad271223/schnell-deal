@@ -1,7 +1,8 @@
 'use client';
 
+import clsx from 'clsx';
 import { useMemo, useState } from 'react';
-import { AlertTriangle, FileText } from 'lucide-react';
+import { AlertTriangle, CircleCheck, Disc3, FileText, Info } from 'lucide-react';
 import {
   BATTERY_KIND_LABELS,
   BODY_LABELS,
@@ -30,7 +31,7 @@ import { photoUrl, vehicleDocUrl } from '@/lib/api';
 import type { VehicleFile } from '@/lib/types';
 import { DamageSketch } from './damage-sketch';
 import { PhotoGallery } from './photo-gallery';
-import { Alert, DescriptionList, EmptyState, StatusBadge, statusBadge, Table, Tabs, Td } from './ui';
+import { Alert, DescriptionList, EmptyState, StatusBadge, Table, Tabs, Td } from './ui';
 
 type TabId = 'overview' | 'equipment' | 'condition' | 'damages' | 'paint' | 'tires' | 'diagnostics' | 'photos' | 'documents';
 
@@ -132,25 +133,31 @@ export function EquipmentSection({ file }: { file: VehicleFile }) {
 
 export function ConditionSection({ file }: { file: VehicleFile }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <section>
-        <h3 className="mb-2 text-sm font-semibold">Funktionsprüfung</h3>
+        <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-500">Funktionsprüfung</h3>
         {file.features.length ? (
-          <Table head={['Prüfpunkt', 'Ergebnis', 'Hinweis']}>
-            {file.features.map((f) => (
-              <tr key={f.feature}>
-                <Td>{FEATURE_LABELS[f.feature]}</Td>
-                <Td>{statusBadge(FEATURE_RESULT_LABELS, f.result)}</Td>
-                <Td className="whitespace-normal text-slate-600">{f.note ?? ''}</Td>
-              </tr>
-            ))}
-          </Table>
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            {file.features.map((f) => {
+              const [label, tone] = FEATURE_RESULT_LABELS[f.result];
+              const good = tone === 'success' || tone === 'neutral';
+              return (
+                <li key={f.feature} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="text-sm font-medium text-slate-900">{FEATURE_LABELS[f.feature]}</span>
+                  <span className={clsx('inline-flex items-center gap-1.5 text-sm font-medium', good ? 'text-emerald-700' : 'text-amber-700')}>
+                    {good ? <CircleCheck className="h-4 w-4" aria-hidden /> : <AlertTriangle className="h-4 w-4" aria-hidden />}
+                    {f.note || label}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <p className="text-sm text-slate-500">Nicht erfasst.</p>
         )}
       </section>
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">Batterie</h3>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-500">Batterie</h3>
         {file.battery ? (
           <DescriptionList
             items={[
@@ -170,13 +177,13 @@ export function ConditionSection({ file }: { file: VehicleFile }) {
           <p className="text-sm text-slate-500">Nicht erfasst.</p>
         )}
       </section>
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">Dellenprüfung (PDR)</h3>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-500">Dellenprüfung (PDR)</h3>
         {file.pdr ? (
           file.pdr.performed ? (
             <div className="space-y-2">
               <DescriptionList items={[['Anzahl Dellen', file.pdr.dentCount ?? '–'], ['Position', file.pdr.positions ?? '–'], ['Größe', file.pdr.size ?? '–'], ['Lack beschädigt', file.pdr.paintDamaged === null ? '–' : file.pdr.paintDamaged ? 'Ja' : 'Nein']]} />
-              {file.pdr.lineboardPhotoId && <img src={photoUrl(file.id, file.pdr.lineboardPhotoId, 'thumb')} alt="PDR-Lineboard" className="h-32 rounded border border-slate-200" />}
+              {file.pdr.lineboardPhotoId && <img src={photoUrl(file.id, file.pdr.lineboardPhotoId, 'thumb')} alt="PDR-Lineboard" className="h-32 rounded-lg border border-slate-200" />}
             </div>
           ) : (
             <p className="text-sm text-slate-600">Dellenprüfung nicht durchgeführt.</p>
@@ -230,6 +237,7 @@ export function DamagesSection({ file }: { file: VehicleFile }) {
 }
 
 export function PaintSection({ file }: { file: VehicleFile }) {
+  if (!file.paint.length) return <EmptyState title="Keine Lackmessung erfasst" />;
   return (
     <div className="space-y-3">
       {file.paint.some((p) => p.flagged) && (
@@ -237,41 +245,53 @@ export function PaintSection({ file }: { file: VehicleFile }) {
           {PAINT_FLAG_HINT}
         </Alert>
       )}
-      {file.paint.length ? (
-        <Table head={['Messpunkt', 'Wert', 'Hinweis']}>
-          {file.paint.map((p) => (
-            <tr key={p.point} className={p.flagged ? 'bg-amber-50' : undefined}>
-              <Td>{PAINT_POINT_LABELS[p.point]}</Td>
-              <Td className="tabular font-medium">{p.valueUm} µm</Td>
-              <Td>{p.flagged ? <StatusBadge label="Auffälliger Wert" tone="warning" /> : <span className="text-slate-500">unauffällig</span>}</Td>
-            </tr>
-          ))}
-        </Table>
-      ) : (
-        <EmptyState title="Keine Lackmessung erfasst" />
-      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 sm:grid-cols-3 lg:grid-cols-4">
+        {file.paint.map((p) => (
+          <div key={p.point} className={clsx('px-4 py-3.5', p.flagged ? 'bg-amber-50' : 'bg-white')}>
+            <p className="text-[11px] font-semibold uppercase leading-tight tracking-wide text-slate-500">{PAINT_POINT_LABELS[p.point]}</p>
+            <p className={clsx('tabular mt-1 text-lg font-bold', p.flagged ? 'text-amber-700' : 'text-slate-900')}>
+              {p.valueUm} µm{p.flagged && <AlertTriangle className="ml-1 inline h-4 w-4" aria-hidden />}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="flex items-center gap-1.5 text-xs text-slate-500">
+        <Info className="h-3.5 w-3.5" aria-hidden /> µm zeigt die Lackschichtdicke an.
+      </p>
     </div>
   );
 }
 
 export function TiresSection({ file }: { file: VehicleFile }) {
-  return file.tires.length ? (
-    <Table head={['Position', 'Hersteller', 'Dimension', 'Saison', 'Profil', 'DOT', 'Beschädigung', 'Felge']}>
-      {file.tires.map((t) => (
-        <tr key={t.position}>
-          <Td>{TIRE_POSITION_LABELS[t.position]}</Td>
-          <Td>{t.brand ?? '–'}</Td>
-          <Td>{t.dimension ?? '–'}</Td>
-          <Td>{t.season ? TIRE_SEASON_LABELS[t.season] : '–'}</Td>
-          <Td className={t.treadMm !== null && t.treadMm < 3 ? 'font-semibold text-red-700' : undefined}>{t.treadMm !== null ? `${t.treadMm.toLocaleString('de-DE')} mm` : '–'}</Td>
-          <Td>{t.dot ?? '–'}</Td>
-          <Td className="whitespace-normal">{t.damage ?? 'keine'}</Td>
-          <Td className="whitespace-normal">{t.rimCondition ?? '–'}</Td>
-        </tr>
-      ))}
-    </Table>
-  ) : (
-    <EmptyState title="Keine Reifendaten erfasst" />
+  if (!file.tires.length) return <EmptyState title="Keine Reifendaten erfasst" />;
+  const seasons = Array.from(new Set(file.tires.map((t) => (t.season ? TIRE_SEASON_LABELS[t.season] : null)).filter(Boolean))).join(' / ');
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <p className="mb-5 text-sm text-slate-600">
+        <span className="font-semibold text-slate-900">Satz (montiert)</span>
+        {seasons && <span> · {seasons}</span>}
+      </p>
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+        {file.tires.map((t) => {
+          const low = t.treadMm !== null && t.treadMm < 3;
+          const warn = low || !!t.damage;
+          return (
+            <div key={t.position} className="text-center">
+              <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                <Disc3 className="h-9 w-9 text-slate-400" aria-hidden />
+                <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-sm">
+                  {warn ? <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden /> : <CircleCheck className="h-4 w-4 text-emerald-600" aria-hidden />}
+                </span>
+              </div>
+              <p className="mt-2.5 text-sm font-semibold text-slate-900">{TIRE_POSITION_LABELS[t.position]}</p>
+              <p className={clsx('tabular text-xs', low ? 'font-semibold text-red-700' : 'text-slate-500')}>Profil: {t.treadMm !== null ? `${t.treadMm.toLocaleString('de-DE')} mm` : '–'}</p>
+              {t.dimension && <p className="text-[11px] text-slate-400">{t.dimension}</p>}
+              {t.damage && <p className="mt-0.5 text-[11px] text-amber-700">{t.damage}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -309,14 +329,16 @@ export function DiagnosticsSection({ file }: { file: VehicleFile }) {
 
 export function DocumentsSection({ file }: { file: VehicleFile }) {
   return file.documents.length ? (
-    <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+    <ul className="grid gap-2.5 sm:grid-cols-2">
       {file.documents.map((d) => (
-        <li key={d.id} className="flex items-center justify-between gap-3 px-3 py-2">
-          <a href={vehicleDocUrl(file.id, d.id)} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-brand-700 hover:underline">
-            <FileText className="h-4 w-4" aria-hidden />
-            {VEHICLE_DOCUMENT_KIND_LABELS[d.kind]}
+        <li key={d.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-slate-300">
+          <a href={vehicleDocUrl(file.id, d.id)} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2.5 text-sm font-medium text-slate-900 hover:text-brand-700">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <FileText className="h-4.5 w-4.5" aria-hidden />
+            </span>
+            <span className="truncate">{VEHICLE_DOCUMENT_KIND_LABELS[d.kind]}</span>
           </a>
-          {d.visibleToBuyers !== undefined && <StatusBadge label={d.visibleToBuyers ? 'Für Käufer freigegeben' : 'Nur intern'} tone={d.visibleToBuyers ? 'success' : 'neutral'} />}
+          {d.visibleToBuyers !== undefined && <StatusBadge label={d.visibleToBuyers ? 'Freigegeben' : 'Nur intern'} tone={d.visibleToBuyers ? 'success' : 'neutral'} />}
         </li>
       ))}
     </ul>

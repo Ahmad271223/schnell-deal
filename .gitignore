@@ -14,3 +14,9 @@ e2e/playwright-report
 .env.e2e
 infra/env/*.env
 !infra/env/*.env.example
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
