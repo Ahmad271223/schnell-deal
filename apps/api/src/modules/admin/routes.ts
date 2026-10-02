@@ -24,7 +24,7 @@ import { AppError, notFound, parse } from '../../core/errors';
 import { actorOf, getAuth, hashPassword, requireAdmin, requireSuperadmin, revokeUserSessions } from '../../core/auth';
 import { audit, diff } from '../../core/audit';
 import { receiveFile } from '../../core/upload';
-import { signedUrl, malwareScanMode } from '../../core/storage';
+import { IMAGE_MIME, getObject, newStorageKey, putObject, signedUrl, validateUpload, malwareScanMode } from '../../core/storage';
 import { schedulerStatus } from '../auctions/scheduler';
 import { config } from '../../config';
 import { getSettings, saveSettings } from '../../core/settings';
@@ -428,7 +428,35 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return getSettings();
   });
 
-  // ---------- Audit-Log ----------
+  // Logo des Plattformbetreibers für PDF-Dokumente (Bild). Nur Superadmin.
+  app.post('/admin/settings/logo', { preHandler: requireSuperadmin }, async (req, reply) => {
+    const file = await receiveFile(req);
+    const valid = await validateUpload(file.buffer, IMAGE_MIME);
+    const key = newStorageKey('branding/logo', valid.ext);
+    await putObject(key, file.buffer, valid.mime);
+    await db.transaction(async (tx) => {
+      const current = await getSettings(tx);
+      await saveSettings(tx, { ...current, platformLogoKey: key }, getAuth(req).userId);
+      await audit(tx, actorOf(req), { event: 'SETTINGS_CHANGED', entityType: 'settings', entityId: 'platform', newValue: { platformLogoKey: key } });
+    });
+    return reply.status(201).send(await getSettings());
+  });
+
+  app.delete('/admin/settings/logo', { preHandler: requireSuperadmin }, async (req) => {
+    await db.transaction(async (tx) => {
+      const current = await getSettings(tx);
+      await saveSettings(tx, { ...current, platformLogoKey: '' }, getAuth(req).userId);
+      await audit(tx, actorOf(req), { event: 'SETTINGS_CHANGED', entityType: 'settings', entityId: 'platform', newValue: { platformLogoKey: '' } });
+    });
+    return getSettings();
+  });
+
+  // Logo anzeigen (für die Vorschau in den Einstellungen).
+  app.get('/admin/settings/logo/file', { preHandler: requireAdmin }, async (_req, reply) => {
+    const s = await getSettings();
+    if (!s.platformLogoKey) throw notFound('Logo');
+    return reply.redirect(await signedUrl(s.platformLogoKey));
+  });
   app.get('/admin/audit', async (req) => {
     const q = parse(
       z.object({

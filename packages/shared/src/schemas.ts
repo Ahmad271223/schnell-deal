@@ -483,6 +483,11 @@ export const settingsSchema = z.object({
   supportEmail: z.union([z.literal(''), z.string().trim().email('Ungültige E-Mail-Adresse')]),
   supportPhone: z.string().trim().max(40),
   endingSoonMinutes: z.number().int().min(1).max(240),
+  /** PDF-Branding des Plattformbetreibers (optional). */
+  platformLogoKey: z.string().max(300),
+  bankName: z.string().max(120),
+  iban: z.string().max(40),
+  bic: z.string().max(20),
 });
 export type PlatformSettings = z.infer<typeof settingsSchema>;
 
@@ -503,4 +508,8 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   supportEmail: '',
   supportPhone: '',
   endingSoonMinutes: 15,
+  platformLogoKey: '',
+  bankName: '',
+  iban: '',
+  bic: '',
 };

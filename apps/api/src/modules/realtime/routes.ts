@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { and, eq, sql } from 'drizzle-orm';
-import { allowedOrigins } from '../../config';
+import { allowedOrigins, isAllowedOrigin } from '../../config';
 import { db, schema } from '../../core/db/client';
 import { isAdmin, resolveSession, SESSION_COOKIE, type AuthUser } from '../../core/auth';
 import { channels, hub } from '../../core/realtime';
@@ -42,7 +42,7 @@ async function canSubscribe(user: AuthUser, channel: string): Promise<boolean> {
 export async function realtimeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/ws', { websocket: true }, async (socket: WebSocket, req) => {
     const origin = req.headers.origin;
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (origin && !isAllowedOrigin(origin)) {
       socket.close(4003, 'origin_not_allowed');
       return;
     }

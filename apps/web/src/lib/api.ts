@@ -65,6 +65,7 @@ export function errorMessage(err: unknown): string {
 export const photoUrl = (vehicleId: string, photoId: string, variant: 'thumb' | 'web' | 'original' = 'web') =>
   `/api/v1/vehicles/${vehicleId}/photos/${photoId}/file?variant=${variant}`;
 export const vehicleDocUrl = (vehicleId: string, docId: string) => `/api/v1/vehicles/${vehicleId}/documents/${docId}/file`;
+export const vehicleVideoUrl = (vehicleId: string) => `/api/v1/vehicles/${vehicleId}/media/video/file`;
 export const generatedDocUrl = (docId: string) => `/api/v1/documents/${docId}/file`;
 
 export function newId(): string {

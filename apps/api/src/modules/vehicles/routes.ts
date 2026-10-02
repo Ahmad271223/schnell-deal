@@ -31,7 +31,7 @@ import { AppError, notFound, parse } from '../../core/errors';
 import { actorOf, getAuth, isAdmin, requireAdmin, requireAuth, requireInspectorOrAdmin } from '../../core/auth';
 import { audit } from '../../core/audit';
 import { receiveFile } from '../../core/upload';
-import { DOCUMENT_MIME, IMAGE_MIME, newStorageKey, putObject, signedUrl, validateUpload } from '../../core/storage';
+import { DOCUMENT_MIME, IMAGE_MIME, VIDEO_MIME, getObject, newStorageKey, putObject, signedUrl, validateUpload } from '../../core/storage';
 import { enqueue } from '../../core/jobs';
 import { getSettings } from '../../core/settings';
 import { publish, channels } from '../../core/realtime';
@@ -387,6 +387,98 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       return reply.redirect(await signedUrl(p.storageKeyOriginal));
     }
     return reply.redirect(await signedUrl(key));
+  });
+
+  // ---------- Direkter Medien-Upload (Admin): Fotos & Motor-Video ohne Aufnahmeprozess ----------
+  app.post('/vehicles/:id/media/photo', { preHandler: requireAdmin, config: { rateLimit: { max: rateMax(300), timeWindow: '1 minute' } } }, async (req, reply) => {
+    const id = vid(req);
+    const file = await receiveFile(req);
+    const valid = await validateUpload(file.buffer, IMAGE_MIME);
+    const q = await analyzePhoto(file.buffer);
+    const key = newStorageKey(`vehicles/${id}/original`, valid.ext);
+    await putObject(key, file.buffer, valid.mime);
+    const result = await db.transaction(async (tx) => {
+      await loadVehicle(tx, req, id);
+      // Erstes Bild belegt den Katalog-Slot (FRONT_LEFT_45 = Kartenbild), weitere als EXTRA.
+      const [hasMain] = await tx
+        .select({ id: schema.vehiclePhotos.id })
+        .from(schema.vehiclePhotos)
+        .where(and(eq(schema.vehiclePhotos.vehicleId, id), eq(schema.vehiclePhotos.slot, 'FRONT_LEFT_45'), isNull(schema.vehiclePhotos.replacedById)));
+      const slot: PhotoSlot = hasMain ? 'EXTRA' : 'FRONT_LEFT_45';
+      const [photo] = await tx
+        .insert(schema.vehiclePhotos)
+        .values({
+          vehicleId: id,
+          slot,
+          clientUploadId: `media-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          storageKeyOriginal: key,
+          mime: valid.mime,
+          width: q.width,
+          height: q.height,
+          sizeBytes: valid.size,
+          sha256: valid.sha256,
+          quality: q.quality,
+          qualityMetrics: q.metrics,
+          qualityOverride: true,
+          uploadStatus: 'UPLOADED',
+          uploadedBy: getAuth(req).userId,
+        })
+        .returning();
+      await audit(tx, actorOf(req), { event: 'VEHICLE_PHOTO_UPLOADED', entityType: 'vehicle', entityId: id, newValue: { photoId: photo!.id, slot, source: 'admin_media' } });
+      await enqueue(tx, 'image.process', { photoId: photo!.id }, { dedupeKey: `image:${photo!.id}` });
+      return photo!;
+    });
+    return reply.status(201).send({ id: result.id, slot: result.slot });
+  });
+
+  app.delete('/vehicles/:id/media/photo/:photoId', { preHandler: requireAdmin }, async (req) => {
+    const id = vid(req);
+    const photoId = parse(uuidSchema, (req.params as { photoId: string }).photoId);
+    return db.transaction(async (tx) => {
+      await loadVehicle(tx, req, id);
+      const [p] = await tx.select().from(schema.vehiclePhotos).where(and(eq(schema.vehiclePhotos.id, photoId), eq(schema.vehiclePhotos.vehicleId, id)));
+      if (!p) throw notFound('Foto');
+      await tx.delete(schema.vehiclePhotos).where(eq(schema.vehiclePhotos.id, photoId));
+      await audit(tx, actorOf(req), { event: 'VEHICLE_PHOTO_REPLACED', entityType: 'vehicle', entityId: id, newValue: { photoId, deleted: true, source: 'admin_media' } });
+      return { ok: true };
+    });
+  });
+
+  app.post('/vehicles/:id/media/video', { preHandler: requireAdmin }, async (req, reply) => {
+    const id = vid(req);
+    const file = await receiveFile(req);
+    const valid = await validateUpload(file.buffer, VIDEO_MIME);
+    const key = newStorageKey(`vehicles/${id}/video`, valid.ext);
+    await putObject(key, file.buffer, valid.mime);
+    await db.transaction(async (tx) => {
+      await loadVehicle(tx, req, id);
+      await tx.update(schema.vehicles).set({ engineVideoKey: key, engineVideoMime: valid.mime, updatedAt: new Date() }).where(eq(schema.vehicles.id, id));
+      await audit(tx, actorOf(req), { event: 'VEHICLE_UPDATED', entityType: 'vehicle', entityId: id, newValue: { engineVideo: true, mime: valid.mime, source: 'admin_media' } });
+    });
+    return reply.status(201).send({ ok: true });
+  });
+
+  app.delete('/vehicles/:id/media/video', { preHandler: requireAdmin }, async (req) => {
+    const id = vid(req);
+    return db.transaction(async (tx) => {
+      await loadVehicle(tx, req, id);
+      await tx.update(schema.vehicles).set({ engineVideoKey: null, engineVideoMime: null, updatedAt: new Date() }).where(eq(schema.vehicles.id, id));
+      await audit(tx, actorOf(req), { event: 'VEHICLE_UPDATED', entityType: 'vehicle', entityId: id, newValue: { engineVideo: false, source: 'admin_media' } });
+      return { ok: true };
+    });
+  });
+
+  app.get('/vehicles/:id/media/video/file', { preHandler: requireAuth }, async (req, reply) => {
+    const id = vid(req);
+    const u = getAuth(req);
+    if (u.company?.type === 'DEALER') {
+      if (!(await buyerCanSeeVehicle(db, u, id))) throw notFound('Video');
+    } else {
+      await loadVehicle(db, req, id);
+    }
+    const [v] = await db.select({ key: schema.vehicles.engineVideoKey }).from(schema.vehicles).where(eq(schema.vehicles.id, id));
+    if (!v?.key) throw notFound('Video');
+    return reply.redirect(await signedUrl(v.key));
   });
 
   // ---------- Dokumente ----------

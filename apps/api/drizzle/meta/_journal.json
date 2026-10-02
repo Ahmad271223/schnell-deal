@@ -43,6 +43,13 @@
       "when": 1790944093143,
       "tag": "0005_photo_quality_cropped",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790960810494,
+      "tag": "0006_left_hex",
+      "breakpoints": true
     }
   ]
 }

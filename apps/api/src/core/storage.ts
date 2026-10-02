@@ -83,6 +83,7 @@ export function sha256(buf: Buffer): string {
 }
 
 export const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const VIDEO_MIME = ['video/mp4', 'video/webm', 'video/quicktime'] as const;
 export const DOCUMENT_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] as const;
 
 export interface ValidatedFile {

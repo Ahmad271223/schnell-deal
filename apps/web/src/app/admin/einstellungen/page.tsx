@@ -55,6 +55,9 @@ function FeesTab() {
       supportEmail: s.supportEmail,
       supportPhone: s.supportPhone,
       endingSoonMinutes: String(s.endingSoonMinutes),
+      bankName: s.bankName ?? '',
+      iban: s.iban ?? '',
+      bic: s.bic ?? '',
     });
   }, [q.data]);
   const set = (k: string) => (e: { target: { value: string } }) => setV((o) => ({ ...o, [k]: e.target.value }));
@@ -81,6 +84,10 @@ function FeesTab() {
           supportEmail: (v.supportEmail ?? '').trim(),
           supportPhone: (v.supportPhone ?? '').trim(),
           endingSoonMinutes: Number(v.endingSoonMinutes),
+          platformLogoKey: q.data?.platformLogoKey ?? '',
+          bankName: (v.bankName ?? '').trim(),
+          iban: (v.iban ?? '').trim(),
+          bic: (v.bic ?? '').trim(),
         },
       });
       setSaved(true);
@@ -113,7 +120,11 @@ function FeesTab() {
           <Field label="Support-E-Mail (Kontakt auf der Auktionsseite)" hint="Leer lassen, um keinen Kontakt anzuzeigen." className="sm:col-span-2"><Input type="email" value={v.supportEmail ?? ''} onChange={set('supportEmail')} /></Field>
           <Field label="Support-Telefon" className="sm:col-span-2"><Input type="tel" value={v.supportPhone ?? ''} onChange={set('supportPhone')} /></Field>
           <Field label="Zahlungsinformationen (Käufer-PDF)" className="sm:col-span-2 lg:col-span-4"><Textarea value={v.paymentInstructions ?? ''} onChange={set('paymentInstructions')} rows={3} /></Field>
+          <Field label="Bank (PDF)"><Input value={v.bankName ?? ''} onChange={set('bankName')} placeholder="z. B. Sparkasse Hannover" /></Field>
+          <Field label="IBAN (PDF)"><Input value={v.iban ?? ''} onChange={set('iban')} placeholder="DE00 0000 0000 0000 0000 00" /></Field>
+          <Field label="BIC (PDF)"><Input value={v.bic ?? ''} onChange={set('bic')} placeholder="XXXXDEXXXXX" /></Field>
         </fieldset>
+        <LogoUploader logoKey={q.data?.platformLogoKey ?? ''} superadmin={superadmin} onChange={() => void q.refetch()} />
         {superadmin && (
           <div className="mt-4 flex items-center gap-3">
             <Button onClick={save}>Speichern</Button>
@@ -135,6 +146,71 @@ interface LegalDoc {
   activeFrom: string;
   createdAt: string;
 }
+
+/** Logo-Upload des Plattformbetreibers (erscheint im PDF-Kopf). Nur Superadmin. */
+function LogoUploader({ logoKey, superadmin, onChange }: { logoKey: string; superadmin: boolean; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [bust, setBust] = useState(0);
+  const upload = async (file: File) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/v1/admin/settings/logo', { method: 'POST', body: fd, credentials: 'include' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message ?? 'Upload fehlgeschlagen.');
+      setBust(Date.now());
+      onChange();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload fehlgeschlagen.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api('/admin/settings/logo', { method: 'DELETE' });
+      setBust(Date.now());
+      onChange();
+    } catch {
+      setErr('Entfernen fehlgeschlagen.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-4 rounded-xl border border-slate-200 p-4">
+      <p className="text-sm font-semibold text-slate-900">Logo (PDF-Kopf)</p>
+      <p className="mt-0.5 text-xs text-slate-500">PNG, JPG oder WebP. Erscheint oben rechts auf Käufer-, Verkäufer- und internen Dokumenten.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <div className="flex h-16 w-40 items-center justify-center overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50">
+          {logoKey ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={`/api/v1/admin/settings/logo/file?v=${bust}`} alt="Logo" className="max-h-full max-w-full object-contain" data-testid="branding-logo-preview" />
+          ) : (
+            <span className="text-xs text-slate-400">Kein Logo</span>
+          )}
+        </div>
+        {superadmin && (
+          <div className="flex items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+              {busy ? 'Lädt …' : 'Logo hochladen'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={busy} data-testid="branding-logo-input" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+            </label>
+            {logoKey && (
+              <Button variant="ghost" onClick={remove} disabled={busy}>Entfernen</Button>
+            )}
+          </div>
+        )}
+      </div>
+      {err && <p className="mt-2 text-sm text-brand-700">{err}</p>}
+    </div>
+  );
+}
+
 
 function LegalTab() {
   const q = useQuery({ queryKey: ['admin-legal'], queryFn: () => api<LegalDoc[]>('/admin/legal') });

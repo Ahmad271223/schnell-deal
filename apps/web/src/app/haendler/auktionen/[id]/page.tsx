@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, vehicleVideoUrl } from '@/lib/api';
 import type { DealerAuctionDetail, DealerAuctionState } from '@/lib/types';
 import { LiveBidPanel } from '@/components/live-bid-panel';
 import { AuctionBreadcrumb, AuctionGallery, AuctionHeading, AuctionVehicleTabs, KeyFacts, LocationCard, vehicleTitle, type AuctionTab } from '@/components/auction-detail';
@@ -52,6 +52,12 @@ function AuctionDetailView({ id, data }: { id: string; data: DealerAuctionDetail
       <div className="min-w-0 space-y-3 xl:col-start-1 xl:row-start-1">
         <AuctionBreadcrumb catalog={data.catalog} title={vehicleTitle(data.vehicle)} />
         <AuctionGallery vehicleId={data.vehicle.id} photos={data.vehicle.photos} live={live.data.status === 'ACTIVE'} />
+        {data.vehicle.hasEngineVideo && (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-black" data-testid="engine-video">
+            <video src={vehicleVideoUrl(data.vehicle.id)} controls preload="metadata" playsInline className="aspect-video w-full bg-black" />
+            <p className="bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300">Motor-/Fahrzeugvideo</p>
+          </div>
+        )}
         <div className="pt-2">
           <AuctionHeading detail={data} onToggleFavorite={toggleFavorite} favoriteBusy={favoriteBusy} onShowCondition={() => showTab('condition')} />
         </div>

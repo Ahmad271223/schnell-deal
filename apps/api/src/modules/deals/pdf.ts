@@ -16,7 +16,7 @@ import {
 } from '@sd/shared';
 import { db, schema } from '../../core/db/client';
 import { getSettings } from '../../core/settings';
-import { newStorageKey, putObject, sha256 } from '../../core/storage';
+import { newStorageKey, putObject, sha256, getObject } from '../../core/storage';
 import { audit, SYSTEM_ACTOR } from '../../core/audit';
 import { markDocumentsReady } from './service';
 import { notifyCompany } from '../notifications/service';
@@ -59,6 +59,7 @@ interface PdfContext {
   winningBid: typeof schema.bids.$inferSelect;
   legalRefs: { kind: string; version: string; title: string; acceptedAt: Date }[];
   settings: Awaited<ReturnType<typeof getSettings>>;
+  logo: Buffer | null;
   version: number;
   reason: string;
   generatedAt: Date;
@@ -81,6 +82,13 @@ function render(kind: GeneratedDocumentKind, ctx: PdfContext, qr: Buffer | null)
     const width = doc.page.width - MARGIN * 2;
 
     // Kopf
+    if (ctx.logo) {
+      try {
+        doc.image(ctx.logo, doc.page.width - MARGIN - 120, MARGIN, { fit: [120, 48], align: 'right' });
+      } catch {
+        /* ungültiges Bild ignorieren */
+      }
+    }
     doc.font('Helvetica-Bold').fontSize(16).text(ctx.settings.platformName, { continued: false });
     doc.font('Helvetica').fontSize(9).fillColor('#555').text(ctx.settings.platformAddress);
     doc.moveDown(0.8).fillColor('#000');
@@ -184,6 +192,9 @@ function render(kind: GeneratedDocumentKind, ctx: PdfContext, qr: Buffer | null)
       section('Zahlungsinformationen');
       row('Zahlbar bis', formatDateDe(d.paymentDueAt));
       row('Verwendungszweck', d.dealNumber);
+      if (ctx.settings.bankName) row('Bank', ctx.settings.bankName);
+      if (ctx.settings.iban) row('IBAN', ctx.settings.iban);
+      if (ctx.settings.bic) row('BIC', ctx.settings.bic);
       paragraph(ctx.settings.paymentInstructions);
       section('Abholung');
       const p = ctx.pickup;
@@ -293,11 +304,12 @@ export async function generateDealDocumentsJob(payload: { dealId: string; reason
   ).rows as [{ v: number }];
   const generatedAt = new Date();
   const qr = pickup ? await QRCode.toBuffer(`SD-PICKUP:${deal.dealNumber}:${pickup.pickupCode}`, { margin: 1, width: 240 }) : null;
+  const logo = settings.platformLogoKey ? await getObject(settings.platformLogoKey).catch(() => null) : null;
 
   const kinds: GeneratedDocumentKind[] = ['BUYER', 'SELLER', 'INTERNAL'];
   const rendered: { kind: GeneratedDocumentKind; key: string; hash: string; size: number }[] = [];
   for (const kind of kinds) {
-    const buf = await render(kind, { deal, auction: auction!, pickup, invoices, winningBid: winningBid!, legalRefs: latestPerKind, settings, version: v, reason: payload.reason, generatedAt }, qr);
+    const buf = await render(kind, { deal, auction: auction!, pickup, invoices, winningBid: winningBid!, legalRefs: latestPerKind, settings, logo, version: v, reason: payload.reason, generatedAt }, qr);
     const key = newStorageKey(`deals/${deal.id}/${kind.toLowerCase()}`, 'pdf');
     await putObject(key, buf, 'application/pdf');
     rendered.push({ kind, key, hash: sha256(buf), size: buf.length });

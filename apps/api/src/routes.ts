@@ -51,7 +51,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     const ext = (v.key.split('.').pop() || '').toLowerCase();
     const mime =
-      ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'application/octet-stream';
+      ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : ext === 'mov' ? 'video/quicktime' : 'application/octet-stream';
     reply.header('Content-Type', mime);
     reply.header('Cache-Control', 'private, max-age=300');
     if (v.downloadName) reply.header('Content-Disposition', `attachment; filename="${v.downloadName.replace(/[^A-Za-z0-9._-]/g, '_')}"`);

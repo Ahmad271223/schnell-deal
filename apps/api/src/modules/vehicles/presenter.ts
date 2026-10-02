@@ -129,6 +129,7 @@ export async function buildVehicleFile(tx: DbOrTx, vehicleId: string, audience: 
     holderType: v.holderType,
     keysCount: v.keysCount,
     equipment: v.equipment,
+    hasEngineVideo: !!v.engineVideoKey,
     completenessPct: v.completenessPct,
     hasDamages: v.hasDamages,
     paintFlagged: v.paintFlagged,

@@ -57,6 +57,7 @@ export interface VehicleFile {
   holderType: HolderType | null;
   keysCount: number | null;
   equipment: string[];
+  hasEngineVideo?: boolean;
   completenessPct: number;
   hasDamages: boolean;
   paintFlagged: boolean;

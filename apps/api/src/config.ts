@@ -78,5 +78,17 @@ function load(): Config {
 
 export const config = load();
 export const allowedOrigins = config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
+/** Emergent-Preview-Domains: der Ingress schreibt den Origin-Header auf wechselnde interne Hosts um. */
+const PREVIEW_HOST_SUFFIXES = ['.preview.emergentagent.com', '.preview.emergentcf.cloud', '.emergent.host'];
+/** Erlaubte Herkunft für CSRF/WebSocket: konfigurierte Origins oder eine Emergent-Preview-Domain. */
+export const isAllowedOrigin = (origin: string): boolean => {
+  if (allowedOrigins.includes(origin)) return true;
+  try {
+    const host = new URL(origin).hostname;
+    return PREVIEW_HOST_SUFFIXES.some((s) => host.endsWith(s));
+  } catch {
+    return false;
+  }
+};
 /** Obergrenze einer Ratenbegrenzung; mit RATE_LIMIT_DISABLED (nur Tests und Lasttest) praktisch unbegrenzt. */
 export const rateMax = (max: number): number => (config.RATE_LIMIT_DISABLED ? 1_000_000 : max);

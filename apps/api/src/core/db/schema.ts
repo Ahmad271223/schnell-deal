@@ -391,6 +391,8 @@ export const vehicles = pgTable(
     emissionClass: emissionClassEnum('emission_class'),
     holderType: holderTypeEnum('holder_type'),
     keysCount: integer('keys_count'),
+    engineVideoKey: text('engine_video_key'),
+    engineVideoMime: text('engine_video_mime'),
     equipment: text('equipment').array().notNull().default(sql`'{}'::text[]`),
     status: vehicleStatusEnum('status').notNull().default('DRAFT'),
     completenessPct: integer('completeness_pct').notNull().default(0),
