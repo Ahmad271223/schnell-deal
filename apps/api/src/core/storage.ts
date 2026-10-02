@@ -1,58 +1,70 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
-import { GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { config } from '../config';
 import { AppError } from './errors';
 
-const baseClientConfig = {
-  region: config.S3_REGION,
-  forcePathStyle: config.S3_FORCE_PATH_STYLE,
-  credentials: { accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY },
-};
+/**
+ * Lokaler, persistenter Objektspeicher (Dateisystem) unter STORAGE_DIR.
+ * Ersetzt in dieser Umgebung MinIO/S3; die API liefert Objekte serverseitig aus
+ * bzw. über kurzlebige, signierte /files-Links (signedUrl).
+ */
+const STORAGE_DIR = process.env.STORAGE_DIR || '/app/.storage';
+const SIGN_SECRET = config.S3_SECRET_KEY || 'schnelldeal-local-secret';
 
-const s3 = new S3Client({ ...baseClientConfig, endpoint: config.S3_ENDPOINT });
-/** Separater Client nur zum Signieren mit der öffentlich erreichbaren Adresse. */
-const s3Public = new S3Client({ ...baseClientConfig, endpoint: config.S3_PUBLIC_ENDPOINT ?? config.S3_ENDPOINT });
+function safeResolve(key: string): string {
+  const full = path.resolve(STORAGE_DIR, key);
+  if (!full.startsWith(path.resolve(STORAGE_DIR) + path.sep)) throw new AppError(400, 'BAD_KEY', 'Ungültiger Objektschlüssel.');
+  return full;
+}
 
-export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: config.S3_BUCKET,
-      Key: key,
-      Body: body,
-      ContentType: contentType,
-      // Objekte sind privat; der Bucket hat keine anonyme Policy.
-    }),
-  );
+export async function putObject(key: string, body: Buffer, _contentType: string): Promise<void> {
+  const full = safeResolve(key);
+  await fs.mkdir(path.dirname(full), { recursive: true });
+  await fs.writeFile(full, body);
 }
 
 export async function getObject(key: string): Promise<Buffer> {
-  const res = await s3.send(new GetObjectCommand({ Bucket: config.S3_BUCKET, Key: key }));
-  if (!res.Body) throw new Error(`Objekt ${key} ohne Inhalt`);
-  const bytes = await res.Body.transformToByteArray();
-  return Buffer.from(bytes);
+  try {
+    return await fs.readFile(safeResolve(key));
+  } catch {
+    throw new Error(`Objekt ${key} nicht gefunden`);
+  }
 }
 
-/** Kurzlebige Signed URL (Standard 5 Minuten). Nur nach erfolgter Autorisierung aufrufen. */
+/** Kurzlebige, signierte Download-URL (HMAC über Schlüssel + Ablaufzeit). Nur nach Autorisierung aufrufen. */
 export async function signedUrl(key: string, opts: { downloadName?: string; ttlSeconds?: number } = {}): Promise<string> {
-  return getSignedUrl(
-    s3Public,
-    new GetObjectCommand({
-      Bucket: config.S3_BUCKET,
-      Key: key,
-      ResponseContentDisposition: opts.downloadName
-        ? `attachment; filename="${opts.downloadName.replace(/[^A-Za-z0-9._-]/g, '_')}"`
-        : undefined,
-    }),
-    { expiresIn: opts.ttlSeconds ?? config.SIGNED_URL_TTL_SECONDS },
-  );
+  const exp = Date.now() + (opts.ttlSeconds ?? config.SIGNED_URL_TTL_SECONDS) * 1000;
+  const payload = JSON.stringify({ k: key, exp, dn: opts.downloadName ?? null });
+  const b64 = Buffer.from(payload).toString('base64url');
+  const sig = crypto.createHmac('sha256', SIGN_SECRET).update(b64).digest('hex');
+  const base = (config.PUBLIC_WEB_URL || '').replace(/\/$/, '');
+  return `${base}/api/v1/files?t=${b64}.${sig}`;
+}
+
+/** Validiert ein signiertes Token und gibt Objektschlüssel + Download-Namen zurück (oder null). */
+export function verifyFileToken(token: string): { key: string; downloadName: string | null } | null {
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const b64 = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', SIGN_SECRET).update(b64).digest('hex');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const { k, exp, dn } = JSON.parse(Buffer.from(b64, 'base64url').toString()) as { k: string; exp: number; dn: string | null };
+    if (typeof exp !== 'number' || Date.now() > exp) return null;
+    return { key: k, downloadName: dn };
+  } catch {
+    return null;
+  }
 }
 
 export async function storageHealthy(): Promise<boolean> {
   try {
-    await s3.send(new HeadBucketCommand({ Bucket: config.S3_BUCKET }));
+    await fs.mkdir(STORAGE_DIR, { recursive: true });
+    await fs.access(STORAGE_DIR);
     return true;
   } catch {
     return false;
