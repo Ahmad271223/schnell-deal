@@ -120,9 +120,9 @@ function FeesTab() {
           <Field label="Support-E-Mail (Kontakt auf der Auktionsseite)" hint="Leer lassen, um keinen Kontakt anzuzeigen." className="sm:col-span-2"><Input type="email" value={v.supportEmail ?? ''} onChange={set('supportEmail')} /></Field>
           <Field label="Support-Telefon" className="sm:col-span-2"><Input type="tel" value={v.supportPhone ?? ''} onChange={set('supportPhone')} /></Field>
           <Field label="Zahlungsinformationen (Käufer-PDF)" className="sm:col-span-2 lg:col-span-4"><Textarea value={v.paymentInstructions ?? ''} onChange={set('paymentInstructions')} rows={3} /></Field>
-          <Field label="Bank (PDF)"><Input value={v.bankName ?? ''} onChange={set('bankName')} placeholder="z. B. Sparkasse Hannover" /></Field>
-          <Field label="IBAN (PDF)"><Input value={v.iban ?? ''} onChange={set('iban')} placeholder="DE00 0000 0000 0000 0000 00" /></Field>
-          <Field label="BIC (PDF)"><Input value={v.bic ?? ''} onChange={set('bic')} placeholder="XXXXDEXXXXX" /></Field>
+          <Field label="Bank (PDF)"><Input value={v.bankName ?? ''} onChange={set('bankName')} placeholder="z. B. Sparkasse Hannover" data-testid="settings-bank-name" /></Field>
+          <Field label="IBAN (PDF)"><Input value={v.iban ?? ''} onChange={set('iban')} placeholder="DE00 0000 0000 0000 0000 00" data-testid="settings-iban" /></Field>
+          <Field label="BIC (PDF)"><Input value={v.bic ?? ''} onChange={set('bic')} placeholder="XXXXDEXXXXX" data-testid="settings-bic" /></Field>
         </fieldset>
         <LogoUploader logoKey={q.data?.platformLogoKey ?? ''} superadmin={superadmin} onChange={() => void q.refetch()} />
         {superadmin && (

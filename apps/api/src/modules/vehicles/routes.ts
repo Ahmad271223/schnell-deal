@@ -438,7 +438,8 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
       await loadVehicle(tx, req, id);
       const [p] = await tx.select().from(schema.vehiclePhotos).where(and(eq(schema.vehiclePhotos.id, photoId), eq(schema.vehiclePhotos.vehicleId, id)));
       if (!p) throw notFound('Foto');
-      await tx.delete(schema.vehiclePhotos).where(eq(schema.vehiclePhotos.id, photoId));
+      // vehicle_photos ist append-only (DB-Trigger): statt Hard-Delete als „ersetzt" markieren → überall ausgeblendet.
+      await tx.update(schema.vehiclePhotos).set({ replacedById: photoId, replacedAt: new Date() }).where(eq(schema.vehiclePhotos.id, photoId));
       await audit(tx, actorOf(req), { event: 'VEHICLE_PHOTO_REPLACED', entityType: 'vehicle', entityId: id, newValue: { photoId, deleted: true, source: 'admin_media' } });
       return { ok: true };
     });

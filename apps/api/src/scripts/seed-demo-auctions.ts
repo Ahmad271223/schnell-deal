@@ -13,6 +13,8 @@ import { db, pool, schema } from '../core/db/client';
 const EUR = (euro: number) => Math.round(euro * 100);
 const MIN = 60 * 1000;
 const H = 60 * MIN;
+/** Optionale „Generation" für eine zweite Charge frischer Auktionen (neue Nummern/VINs, lange Laufzeit). */
+const GEN = process.env.DEMO_GEN ?? '';
 
 interface Demo {
   nr: string;
@@ -98,20 +100,31 @@ async function main() {
 
   let created = 0;
   for (const d of DEMOS) {
-    const [exists] = await db.select({ id: schema.auctions.id }).from(schema.auctions).where(eq(schema.auctions.number, d.nr));
-    if (exists) continue;
-
     const now = Date.now();
+    const nr = `${d.nr}${GEN}`;
     const startsAt = new Date(now - H);
-    const endsAt = new Date(now + d.endsInMs);
+    const endsAt = new Date(now + (GEN ? 2 * H + created * 8 * H : d.endsInMs));
     const durationMinutes = Math.round((endsAt.getTime() - startsAt.getTime()) / MIN);
+
+    const [exists] = await db.select({ id: schema.auctions.id }).from(schema.auctions).where(eq(schema.auctions.number, nr));
+    if (exists) {
+      // Auffrischen: abgelaufene Demo-Auktion ohne Deal wieder aktiv setzen (gestaffelte Endzeiten, damit der Katalog gefüllt bleibt).
+      const [hasDeal] = await db.select({ id: schema.deals.id }).from(schema.deals).where(eq(schema.deals.auctionId, exists.id));
+      if (!hasDeal) {
+        const freshEnds = new Date(now + 2 * H + created * 8 * H);
+        await db.update(schema.auctions).set({ status: 'ACTIVE', startsAt, endsAt: freshEnds, originalEndsAt: freshEnds, startedAt: startsAt }).where(eq(schema.auctions.id, exists.id));
+        await db.update(schema.vehicles).set({ status: 'IN_AUCTION', updatedAt: new Date() }).where(sql`id = (select vehicle_id from auctions where id = ${exists.id})`);
+        created++;
+      }
+      continue;
+    }
 
     const [v] = await db
       .insert(schema.vehicles)
       .values({
-        internalNumber: `A-${d.nr}`,
+        internalNumber: `A-${nr}`,
         companyId: dealership.id,
-        vin: `WDEMO${d.nr}0000${d.nr}`.slice(0, 17),
+        vin: `WDEMO${nr}0000${nr}`.slice(0, 17),
         vinCheck: 'VALID',
         make: d.make,
         model: d.model,
@@ -147,7 +160,7 @@ async function main() {
     await db.insert(schema.catalogVehicles).values({ catalogId: catalog!.id, vehicleId: v!.id, sort: created }).onConflictDoNothing();
 
     await db.insert(schema.auctions).values({
-      number: d.nr,
+      number: nr,
       vehicleId: v!.id,
       catalogId: catalog!.id,
       status: 'ACTIVE',
