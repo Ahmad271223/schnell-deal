@@ -1,0 +1,16 @@
+# Zeilenenden im Repository immer LF. Shell-Skripte, Dockerfiles und Compose-Dateien werden in Linux-Containern
+# ausgeführt bzw. eingebunden; CRLF (Windows-Standard mit core.autocrlf) würde sie dort unbrauchbar machen.
+* text=auto eol=lf
+*.sh text eol=lf
+*.mjs text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Caddyfile text eol=lf
+
+# Binärdateien
+*.png binary
+*.jpg binary
+*.webp binary
+*.ico binary
+*.dump binary
