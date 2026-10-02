@@ -29,19 +29,19 @@ Legende: **erfüllt** = automatisiert nachgewiesen · **vorbereitet** = umgesetz
 
 ## Testlauf
 
-Stand 02.10.2026 (nachts), lokale Windows-Umgebung (Node 24, Postgres 16 und MinIO in Docker), finaler Code-Stand nach Übernahme der fremden Commits, Motorvideo, One-Pager, Startseite und den Härtungen aus der Livegang-Prüfung.
+Stand 03.10.2026, lokale Windows-Umgebung (Node 24, Postgres 16 und MinIO in Docker), finaler Code-Stand nach Übernahme der fremden Commits, Motorvideo, One-Pager, Startseite, den Härtungen aus der eigenen Livegang-Prüfung und den Korrekturen aus der zweiten externen Prüfung (27 Punkte).
 
 | Prüfung | Befehl | Ergebnis |
 |---|---|---|
 | Typecheck aller Pakete (shared, api, web, e2e) | `pnpm typecheck` | ohne Fehler |
 | Lint | `pnpm lint` | ohne Befund |
 | Unit-Tests | `pnpm --filter @sd/shared test` | 39 von 39 bestanden |
-| Integrationstests (14 Dateien, inkl. KI-Bilderkennung mit nachgebautem Dienst, Motorvideo, Händler-Startseite, Livegang-Schutz) | `pnpm --filter @sd/api test` | 117 von 117 bestanden, 3 übersprungen (Scanner-Live-Test ohne Scanner) |
+| Integrationstests (16 Dateien, inkl. KI-Bilderkennung mit nachgebautem Dienst, Motorvideo, Händler-Startseite, Livegang-Schutz, Job-Sperren, Benachrichtigungs-Jobs, Architekturregel) | `pnpm --filter @sd/api test` | 124 von 124 bestanden, 3 übersprungen (Scanner-Live-Test ohne Scanner) |
 | Virenscanner live (echter clamd, EICAR) | `CLAMAV_HOST=localhost … vitest run test/clamav-live.test.ts` | 3 von 3 bestanden |
 | Point-in-Time-Recovery (Basissicherung + WAL bis Zeitpunkt T) | `bash scripts/pitr-restore-test.sh` | bestanden: Stand zu T enthält „before“, nicht „after“ |
 | Backup-Container mit Kopie außer Haus (rclone → S3-kompatibler Bucket) | `docker compose --profile app run … backup /backup.sh --base` | bestanden: Dump, Prüfsumme, WAL-Archiv und Basissicherungen im Bucket |
 | Concurrency-Tests | `pnpm test:concurrency` | 7 von 7 bestanden |
-| E2E-Gesamtablauf inkl. Motorvideo, Startseite und One-Pager | `pnpm test:e2e` | bestanden (Testdauer 2,4 min) |
+| E2E-Gesamtablauf inkl. Motorvideo, Startseite und One-Pager | `pnpm test:e2e` | bestanden (Testdauer 2,0 min) |
 | Lasttest | `pnpm loadtest` | bestanden, alle Invarianten und Plausibilitätsprüfungen erfüllt (`docs/lasttest-ergebnis.md`) |
 | Backup und Wiederherstellung | `pnpm backup && pnpm restore-test` | bestanden (Dump eingespielt, Zeilenzahlen und Schutz-Trigger identisch) |
 | Abhängigkeiten | `pnpm audit --prod` | keine bekannten Schwachstellen |
@@ -90,6 +90,24 @@ Lasttest-Kernwerte:
 **Unabhängige Livegang-Prüfung** (sieben Prüfdimensionen, schwere Befunde adversarial gegengeprüft): Ergebnis und Stand der Behebung in `11-livegang-checkliste.md`, Abschnitt E. Sofort behoben: Impressum als Rechtstext-Art mit öffentlicher Seite, Sperre für Auktionen in Produktion bei Vorlagen-Rechtstexten, MinIO/Mailpit nur noch im Entwicklungsprofil, restart-Policies und Log-Rotation, Startprüfung auf Platzhalterwerte, `media-src` in der CSP (Motorvideo), Pflichtvariable für die Speicher-Adresse im Build, Objektspeicher in der Kopie außer Haus, Alarm-Webhook bei Backup-Fehlern, keine internen Fehlertexte im Health-Endpunkt, Datenerhalt bei Nachlade-Fehlern, KI-Prompt ohne Fahrzeugschein-Hinweis, keine optionale Ausweiskopie mehr. Die E2E-Läufe deckten dabei zwei Folgefehler der fremden Änderungen auf (Linktext und Kartenrundung) und einen eigenen: Der Bestätigungsdialog lag im Stacking-Kontext der klebenden Seitenspalte und wurde vom Schadenfoto überdeckt; Dialoge und Vollbild werden jetzt per Portal unter `<body>` gerendert.
 
 **Gefunden und behoben:** In Abfragen über eine einzige Tabelle ließ Drizzle den Tabellennamen weg, sodass ein unqualifiziertes `"id"` in `EXISTS (SELECT … FROM bids b WHERE b.auction_id = "id")` an `bids.id` band. Folge: Beendete Auktionen waren für unterlegene Mitbieter in Ein-Tabellen-Abfragen (Watchlist, Fotoabruf) nicht sichtbar, und der neue Zähler „beobachtet“ zählte alle Auktionen. Alle Unterabfragen qualifizieren die Spalten jetzt ausdrücklich; Regressionstests in `media.test.ts` und `dealer-home.test.ts`.
+
+### Zweite externe Prüfung (03.10.2026, 27 Punkte)
+
+Eine externe Prüfung des GitHub-Stands meldete 27 Blocker und ernste Risiken. Sie bezog sich auf den Stand nach den Emergent-Commits. Ergebnis der Gegenprüfung im Code: 26 Punkte stimmten, einer (Datenbank-Passwort an zwei Stellen) ist entschärft statt gelöst.
+
+| Punkte | Befund | Ergebnis |
+|---|---|---|
+| 1–6 | Postgres-Datenverzeichnis inkl. WAL, Deal-PDFs, Fotos und Videos im Repository, `.gitignore` ohne Schutz | aus dem Stand entfernt, `.gitignore` ergänzt, **Git-Historie umgeschrieben und `main` erzwungen neu gepusht** (Sicherung als Bundle lokal unter `backups/`) |
+| 7–12, 18 | Lokaler Dateispeicher statt S3: getrennte Speicher in API- und Worker-Container, Verlust beim Neustart, nicht gesichert, S3-Konfiguration ignoriert, Signier-Secret mit bekanntem Standardwert | Rückbau auf den privaten S3-Objektspeicher; Download-Route mit eigenem Token entfernt |
+| 13–14 | Backup und PITR zielen bei verwalteter Datenbank auf den Compose-Postgres | Backup nimmt `DATABASE_URL`; bei externer Datenbank keine lokale Basissicherung, PITR liegt beim Anbieter |
+| 15–17 | MinIO mit Standardzugang, Ports offen, über Caddy veröffentlicht | MinIO nur noch im Profil `dev`/`minio`, Ports auf 127.0.0.1, Zugang aus `.env`, Caddy-Eintrag nur in `Caddyfile.minio` |
+| 19 | Produktion startet mit Standardwerten | Startprüfung bricht ab |
+| 20 | Datenbank-Passwort an zwei Stellen | entschärft: Startprüfung lehnt das Entwicklungs-Passwort in `DATABASE_URL` ab, Doku nennt beide Stellen |
+| 21–24 | Reaper ohne Lebenszeichen, Wettlauf beim Abschluss, E-Mail und Push bei Wiederholung doppelt | Sperr-Token, Lebenszeichen, Zwischenstände; E-Mail wird nach sauberem Fehler wiederholt, nach Abbruch mitten im Versand nicht |
+| 25–26 | Speichern vor der Berechtigungsprüfung, verwaiste Dateien | Berechtigung vorab, Objekt wird bei Transaktionsabbruch entfernt |
+| 27 | WebSocket-Zähler und fehlende Drossel | Abonnements als Menge, 60 Nachrichten je 10 s, Nachrichten bis 1 kB |
+
+Beim Prüflauf fiel zusätzlich ein eigener Fehler auf: „Fahrzeug anlegen“ sendete die Antwort aus der offenen Transaktion heraus; die sofortige FIN-Anfrage der Offline-Warteschlange konnte dadurch auf ein noch unsichtbares Fahrzeug treffen (404). Behoben, eine Architekturregel im Test (`architecture.test.ts`) verhindert Rückfälle. GitHub liefert die alten Commits über ihre direkte Adresse noch aus, bis GitHub die nicht mehr erreichbaren Objekte entfernt; eine Bereinigung des Zwischenspeichers ist über den GitHub-Support möglich.
 
 ### Bildschirmfotos (aus dem E2E-Lauf, echte Daten)
 
