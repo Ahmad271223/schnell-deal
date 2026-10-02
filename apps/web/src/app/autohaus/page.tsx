@@ -6,17 +6,31 @@ import { useQuery } from '@tanstack/react-query';
 import { INSPECTION_STATUS_LABELS } from '@sd/shared';
 import { api } from '@/lib/api';
 import { formatEuro } from '@/lib/format';
+import { useMe } from '@/lib/session';
 import { fmtNum, fmtPct, type DealershipStats } from '@/lib/stats';
 import type { InspectionRequestItem } from '@/lib/types';
-import { Card, ErrorAlert, KpiCard, LinkButton, PageHeader, Spinner, statusBadge } from '@/components/ui';
+import { Card, ErrorAlert, KpiCard, LinkButton, Spinner, statusBadge } from '@/components/ui';
 
 export default function DealershipDashboard() {
+  const me = useMe();
   const stats = useQuery({ queryKey: ['company-stats'], queryFn: () => api<{ type: 'DEALERSHIP' } & DealershipStats>('/company/stats') });
   const requests = useQuery({ queryKey: ['inspection-requests', 'open'], queryFn: () => api<InspectionRequestItem[]>('/inspection-requests?view=open') });
   const k = stats.data?.kpis;
+  const companyName = me.data?.company?.name?.replace('[DEMO] ', '') ?? 'Autohaus';
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" subtitle="Ihre Fahrzeuge, Auktionen und Verkäufe auf einen Blick." />
+      <section className="relative overflow-hidden rounded-2xl bg-sidebar px-6 py-8 text-white shadow-lg sm:px-9" data-testid="dashboard-hero">
+        <div className="pointer-events-none absolute -right-20 -top-16 h-72 w-72 rounded-full bg-brand-600/25 blur-3xl" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-24 right-32 h-56 w-56 rounded-full bg-brand-500/10 blur-3xl" aria-hidden />
+        <div className="relative max-w-2xl">
+          <p className="text-sm font-medium text-slate-300">Willkommen zurück, {companyName}.</p>
+          <h1 className="mt-1.5 font-display text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">Machen Sie mehr aus Ihren Inzahlungnahmen.</h1>
+          <p className="mt-2.5 text-sm text-slate-300 sm:text-base">Vereinbaren Sie Aufnahmetermine für Ihre Inzahlungnahmen. Unser Team holt die Fahrzeuge bei Ihnen vor Ort ab und bereitet sie professionell für die Auktion auf.</p>
+          <LinkButton href="/autohaus/melden" className="mt-5" size="lg" icon={<Camera className="h-5 w-5" aria-hidden />}>
+            Inzahlungnahme melden
+          </LinkButton>
+        </div>
+      </section>
       {stats.isLoading ? (
         <Spinner />
       ) : (
@@ -36,19 +50,6 @@ export default function DealershipDashboard() {
           )}
         </>
       )}
-
-      <Link href="/autohaus/melden" className="flex items-center justify-between gap-4 rounded-xl bg-brand-700 p-6 text-white shadow-md transition hover:bg-brand-800 sm:p-8">
-        <span className="flex items-center gap-4">
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15">
-            <Camera className="h-7 w-7" aria-hidden />
-          </span>
-          <span>
-            <span className="block text-xl font-semibold sm:text-2xl">Inzahlungnahmen stehen bereit</span>
-            <span className="block text-sm text-white/80">Fahrzeugaufnahme anfordern – unser Außendienst fotografiert und erfasst alles vor Ort.</span>
-          </span>
-        </span>
-        <ChevronRight className="h-8 w-8 shrink-0" aria-hidden />
-      </Link>
 
       <Card title="Offene Aufnahmeaufträge" actions={<LinkButton href="/autohaus/termine" variant="ghost" size="sm">Alle Termine</LinkButton>}>
         {requests.isLoading ? (

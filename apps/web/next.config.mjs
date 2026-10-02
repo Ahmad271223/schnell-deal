@@ -33,6 +33,7 @@ const securityHeaders = [
 
 export default {
   reactStrictMode: true,
+  allowedDevOrigins: ['*.preview.emergentagent.com', '*.preview.emergentcf.cloud', '*.cluster-5.preview.emergentcf.cloud'],
   // Separates Build-Verzeichnis z. B. für E2E-Tests parallel zum Dev-Server.
   distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // Standalone-Ausgabe nur im Container-Build (benötigt Symlinks, unter Windows ohne Adminrechte nicht möglich).

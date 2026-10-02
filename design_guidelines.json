@@ -1,0 +1,1367 @@
+{
+  "project_name": "Schnell-Deal",
+  "app_type": "B2B Car Auction Platform",
+  "theme": "Light Content Area with Pitch Dark Executive Sidebar (#0B0F17) and Precision Automotive Red Accents (#DC2626)",
+  "brand_identity": {
+    "name": "SCHNELL DEAL",
+    "logo_style": "Angled crimson red double-parallelogram / diamond geometric mark with crisp white 'SCHNELL' + bold red 'DEAL' typography",
+    "tone": "Engineered Precision, High-Trust B2B Automotive Marketplace, Fast Velocity"
+  },
+  "typography": {
+    "font_families": {
+      "headings": "Plus Jakarta Sans, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "font_scale": {
+      "h1_hero": "text-3xl lg:text-4xl font-extrabold tracking-tight",
+      "h2_section": "text-xl lg:text-2xl font-bold tracking-tight",
+      "h3_card": "text-base sm:text-lg font-semibold tracking-tight",
+      "body_regular": "text-sm leading-relaxed",
+      "body_small": "text-xs leading-normal",
+      "badge": "text-[11px] font-bold tracking-wider uppercase",
+      "price_large": "font-mono text-2xl lg:text-3xl font-black text-slate-900",
+      "countdown_timer": "font-mono text-sm sm:text-base font-bold tracking-widest tabular-nums"
+    }
+  },
+  "colors": {
+    "sidebar": {
+      "bg": "#0B0F17",
+      "border": "#1E293B",
+      "text_active": "#FFFFFF",
+      "text_inactive": "#94A3B8",
+      "text_hover": "#F1F5F9",
+      "active_bg": "#DC2626",
+      "active_bg_glow": "rgba(220, 38, 38, 0.25)",
+      "section_label": "#64748B"
+    },
+    "app_shell": {
+      "bg": "#F8FAFC",
+      "card_bg": "#FFFFFF",
+      "topbar_bg": "#FFFFFF",
+      "topbar_border": "#E2E8F0"
+    },
+    "primary": {
+      "default": "#DC2626",
+      "hover": "#B91C1C",
+      "light_bg": "#FEF2F2",
+      "text": "#DC2626",
+      "focus_ring": "#FCA5A5"
+    },
+    "status_badges": {
+      "live": {
+        "bg": "#FEF2F2",
+        "border": "#FECACA",
+        "text": "#DC2626",
+        "dot": "#EF4444"
+      },
+      "neu": {
+        "bg": "#EFF6FF",
+        "border": "#BFDBFE",
+        "text": "#2563EB",
+        "dot": "#3B82F6"
+      },
+      "endet_bald": {
+        "bg": "#FFFBEB",
+        "border": "#FDE68A",
+        "text": "#D97706",
+        "dot": "#F59E0B"
+      },
+      "sofortkauf": {
+        "bg": "#ECFDF5",
+        "border": "#A7F3D0",
+        "text": "#059669",
+        "dot": "#10B981"
+      },
+      "gewonnen": {
+        "bg": "#F0FDF4",
+        "border": "#BBF7D0",
+        "text": "#16A34A",
+        "dot": "#22C55E"
+      },
+      "überboten": {
+        "bg": "#F1F5F9",
+        "border": "#CBD5E1",
+        "text": "#64748B",
+        "dot": "#94A3B8"
+      }
+    },
+    "neutrals": {
+      "slate_900": "#0F172A",
+      "slate_800": "#1E293B",
+      "slate_700": "#334155",
+      "slate_600": "#475569",
+      "slate_500": "#64748B",
+      "slate_400": "#94A3B8",
+      "slate_300": "#CBD5E1",
+      "slate_200": "#E2E8F0",
+      "slate_100": "#F1F5F9",
+      "slate_50": "#F8FAFC"
+    }
+  },
+  "layout_and_navigation": {
+    "sidebar_spec": {
+      "width": "w-64",
+      "position": "fixed left-0 top-0 bottom-0 z-40 bg-[#0B0F17] flex flex-col justify-between border-r border-slate-800/80",
+      "logo_area": "h-16 px-6 flex items-center border-b border-slate-800/80 gap-3",
+      "logo_markup": "Red angular diamond/parallelogram emblem + 'SCHNELL' (white font-extrabold) 'DEAL' (red font-extrabold)",
+      "nav_item": "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-400 hover:text-white hover:bg-slate-800/60",
+      "nav_item_active": "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-semibold bg-red-600 text-white shadow-md shadow-red-900/30"
+    },
+    "topbar_spec": {
+      "height": "h-16",
+      "padding": "px-6",
+      "bg": "bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between",
+      "elements": [
+        "Global VIN/Brand/Model Search Input with magnifying glass icon and subtle hotkey pill ('Strg + K')",
+        "Live Auctions indicator badge with pulsating red dot",
+        "Favorites icon button with counter badge",
+        "Notifications bell button with unread red badge count",
+        "Country flag switcher (DE - German default)",
+        "User profile chip displaying company name (e.g. 'Autohaus Schmidt GmbH'), user role ('Händler' or 'Autohaus'), and avatar initial badge"
+      ]
+    }
+  },
+  "page_layouts_1to1": {
+    "page_1_dealership_dashboard": {
+      "route": "/autohaus",
+      "header_title": "Willkommen zurück, Autohaus Müller",
+      "sections": [
+        "Welcome Hero Banner: Dark textured backdrop with dark luxury car visual, title 'Fahrzeuge schnell & profitabel vermarkten', subtitle, and red primary CTA 'Neues Fahrzeug einstellen'",
+        "KPI Metrics Row: 4 stat cards (Aktive Auktionen, Veraufte Fahrzeuge, Durchschnittspreis, Gebote gesamt) with +/- % delta badges and icon badges",
+        "Horizontal Stepper Pipeline: Active inspection & selling status (Annahme -> Aufbereitung -> In Auktion -> Verkauft -> Abholung)",
+        "My Vehicles Data Table: Tab filters (Alle, Entwürfe, In Auktion, Verkauft, Nicht Verkauft), search bar, column sorting, vehicle thumbnail, VIN, price, bid count, status pill, action menu",
+        "Active Auctions Quick Cards: Horizontal scrolling or grid of ending auctions with live countdown badges and quick-bid triggers",
+        "Right-Hand Analytics Rail: Monthly Sales Bar Chart (recharts), Sell-Through Rate Donut Chart, Recent Messages List, Important Documents Download Box"
+      ]
+    },
+    "page_2_auction_catalog": {
+      "route": "/haendler",
+      "header_title": "Auktionsübersicht & Katalog",
+      "sections": [
+        "Hero Banner & Live Metrics: Total live vehicles counter, reserve met count, total value",
+        "Multi-Filter Search Bar: Dropdowns for Marke/Modell, Baujahr, Kilometerstand bis, Kraftstoff, Getriebe, Standorte + prominent Red 'Auktionen Filtern' button",
+        "Category Pill Chips: Horizontal filter bar (Alle (128), PKW (84), Transporter (18), SUV (22), Elektro/Hybrid (12), Sofortkauf (8))",
+        "Grid Control Bar: Grid/List layout toggle, Sort dropdown (Endet bald, Neuester Eingang, Gebote), Results count",
+        "Vehicle Card Grid (3 columns on desktop): Responsive card with vehicle photo, status pill (LIVE/Endet bald), countdown badge with flame icon, favorite heart toggle, Title (e.g. '2021 BMW 320d Touring xDrive M Sport'), Meta icons (2021 • 74.500 km • Diesel • 190 PS), Current Bid / Next Bid, Red button 'Jetzt bieten'",
+        "Right Rail Sidebar: 'Meine aktiven Gebote' widget, 'Endet in unter 1 Stunde' list, 'Neu eingetroffen' list"
+      ]
+    },
+    "page_3_vehicle_detail": {
+      "route": "/haendler/auktionen/[id]",
+      "header_title": "BMW 320d xDrive Touring M Sport (2021)",
+      "sections": [
+        "Top Navigation Breadcrumb: '< Zurück zur Übersicht' + Next/Previous Vehicle fast switch buttons + Vehicle ID #AK-8842",
+        "Vehicle Image Gallery: Main featured viewer with zoom overlay, thumbnail carousel (Exterior, Interior, Engine, Tire Tread, Damage close-ups), PDF B2B Gutachten badge",
+        "Key Spec Highlights Grid: 8 icon chips (Leistung, Kraftstoff, Getriebe, Erstzulassung, Kilometer, HU/AU, Fahrzeughalter, Schadstoffklasse)",
+        "Tabbed Detail Panels: 'Übersicht', 'Ausstattung', 'Zustand & Schäden', 'Lackschichtmessung', 'Reifen & Bremsen', 'Diagnose & Fehler', 'Dokumente & B2B-Gutachten', 'Standort & Abholung'",
+        "Prominent Live Auction Panel (Fixed Right Side): Large Live Countdown HH:MM:SS box, Aktuelles Höchstgebot (€ 24.500), Mindestpreis status indicator bar ('Mindestpreis erreicht'), Big Red Button 'Jetzt € 24.600 bieten', Quick increment buttons (+€100, +€250, +€500), Custom Max-Bid Input ('Maximalgebot setzen'), Live Bidding History stream table with real-time websocket pulse effect, Seller info box (Anonymized until auction won)"
+      ]
+    }
+  },
+  "component_specifications": {
+    "buttons": {
+      "primary": "bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-[0.98]",
+      "secondary": "bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-2.5 px-4 rounded-lg transition-colors border border-slate-200",
+      "outline_red": "border-2 border-red-600 text-red-600 hover:bg-red-50 font-semibold py-2 px-4 rounded-lg transition-colors"
+    },
+    "cards": {
+      "default": "bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-sm transition-shadow p-5"
+    },
+    "data_tables": {
+      "wrapper": "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs",
+      "header": "bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider px-4 py-3 text-left",
+      "row": "border-b border-slate-100 hover:bg-slate-50/80 transition-colors text-sm text-slate-700"
+    }
+  },
+  "image_urls": {
+    "hero_dark_bg": "https://images.unsplash.com/photo-1645400379459-f6fd3d963fd4?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "bmw_3series_blue": "https://images.unsplash.com/photo-1652454449842-1b88e4cd3333?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "porsche_dark": "https://images.unsplash.com/photo-1653407497540-26207a2408d7?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "dealership_lot": "https://images.unsplash.com/photo-1656685299543-251a83a0411d?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "car_interior": "https://images.unsplash.com/photo-1652967786818-b25edb1d5298?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Ensure all buttons, form inputs, links, status badges, data table rows, and bidding controls include explicit `data-testid` attributes (e.g. data-testid='place-bid-button', data-testid='search-input', data-testid='vehicle-card-1').",
+    "Keep the left dark sidebar visible across all authenticated routes with '#0B0F17' background and red '#DC2626' active highlights.",
+    "Use German language terminology across the entire UI ('Jetzt bieten', 'Sofortkauf', 'Endet bald', 'Mindestpreis erreicht', 'Händler', 'Autohaus').",
+    "Maintain high density, clean data presentation, crisp borders, and zero transparent overlays on popups/dropdowns."
+  ]
+},
+overwrite: true,
+path: "/app/design_guidelines.json"
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+This is not JSON, let's fix the JSON format:
+Need to provide a valid JSON JSON payload without trailing/Extra brackets.
+
+```json
+{
+  "project_name": "Schnell-Deal",
+  "app_type": "B2B Car Auction Platform",
+  "theme": "Light Content Area with Pitch Dark Executive Sidebar (#0B0F17) and Precision Automotive Red Accents (#DC2626)",
+  "brand_identity": {
+    "name": "SCHNELL DEAL",
+    "logo_style": "Angled crimson red double-parallelogram / diamond geometric mark with crisp white 'SCHNELL' + bold red 'DEAL' typography",
+    "tone": "Engineered Precision, High-Trust B2B Automotive Marketplace, Fast Velocity"
+  },
+  "typography": {
+    "font_families": {
+      "headings": "Plus Jakarta Sans, sans-serif",
+      "body": "Inter, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "font_scale": {
+      "h1_hero": "text-3xl lg:text-4xl font-extrabold tracking-tight",
+      "h2_section": "text-xl lg:text-2xl font-bold tracking-tight",
+      "h3_card": "text-base sm:text-lg font-semibold tracking-tight",
+      "body_regular": "text-sm leading-relaxed",
+      "body_small": "text-xs leading-normal",
+      "badge": "text-[11px] font-bold tracking-wider uppercase",
+      "price_large": "font-mono text-2xl lg:text-3xl font-black text-slate-900",
+      "countdown_timer": "font-mono text-sm sm:text-base font-bold tracking-widest tabular-nums"
+    }
+  },
+  "colors": {
+    "sidebar": {
+      "bg": "#0B0F17",
+      "border": "#1E293B",
+      "text_active": "#FFFFFF",
+      "text_inactive": "#94A3B8",
+      "text_hover": "#F1F5F9",
+      "active_bg": "#DC2626",
+      "active_bg_glow": "rgba(220, 38, 38, 0.25)",
+      "section_label": "#64748B"
+    },
+    "app_shell": {
+      "bg": "#F8FAFC",
+      "card_bg": "#FFFFFF",
+      "topbar_bg": "#FFFFFF",
+      "topbar_border": "#E2E8F0"
+    },
+    "primary": {
+      "default": "#DC2626",
+      "hover": "#B91C1C",
+      "light_bg": "#FEF2F2",
+      "text": "#DC2626",
+      "focus_ring": "#FCA5A5"
+    },
+    "status_badges": {
+      "live": {
+        "bg": "#FEF2F2",
+        "border": "#FECACA",
+        "text": "#DC2626",
+        "dot": "#EF4444"
+      },
+      "neu": {
+        "bg": "#EFF6FF",
+        "border": "#BFDBFE",
+        "text": "#2563EB",
+        "dot": "#3B82F6"
+      },
+      "endet_bald": {
+        "bg": "#FFFBEB",
+        "border": "#FDE68A",
+        "text": "#D97706",
+        "dot": "#F59E0B"
+      },
+      "sofortkauf": {
+        "bg": "#ECFDF5",
+        "border": "#A7F3D0",
+        "text": "#059669",
+        "dot": "#10B981"
+      },
+      "gewonnen": {
+        "bg": "#F0FDF4",
+        "border": "#BBF7D0",
+        "text": "#16A34A",
+        "dot": "#22C55E"
+      },
+      "überboten": {
+        "bg": "#F1F5F9",
+        "border": "#CBD5E1",
+        "text": "#64748B",
+        "dot": "#94A3B8"
+      }
+    },
+    "neutrals": {
+      "slate_900": "#0F172A",
+      "slate_800": "#1E293B",
+      "slate_700": "#334155",
+      "slate_600": "#475569",
+      "slate_500": "#64748B",
+      "slate_400": "#94A3B8",
+      "slate_300": "#CBD5E1",
+      "slate_200": "#E2E8F0",
+      "slate_100": "#F1F5F9",
+      "slate_50": "#F8FAFC"
+    }
+  },
+  "layout_and_navigation": {
+    "sidebar_spec": {
+      "width": "w-64",
+      "position": "fixed left-0 top-0 bottom-0 z-40 bg-[#0B0F17] flex flex-col justify-between border-r border-slate-800/80",
+      "logo_area": "h-16 px-6 flex items-center border-b border-slate-800/80 gap-3",
+      "logo_markup": "Red angular diamond/parallelogram emblem + 'SCHNELL' (white font-extrabold) 'DEAL' (red font-extrabold)",
+      "nav_item": "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors text-slate-400 hover:text-white hover:bg-slate-800/60",
+      "nav_item_active": "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-semibold bg-red-600 text-white shadow-md shadow-red-900/30"
+    },
+    "topbar_spec": {
+      "height": "h-16",
+      "padding": "px-6",
+      "bg": "bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between",
+      "elements": [
+        "Global VIN/Brand/Model Search Input with magnifying glass icon and subtle hotkey pill ('Strg + K')",
+        "Live Auctions indicator badge with pulsating red dot",
+        "Favorites icon button with counter badge",
+        "Notifications bell button with unread red badge count",
+        "Country flag switcher (DE - German default)",
+        "User profile chip displaying company name (e.g. 'Autohaus Schmidt GmbH'), user role ('Händler' or 'Autohaus'), and avatar initial badge"
+      ]
+    }
+  },
+  "page_layouts_1to1": {
+    "page_1_dealership_dashboard": {
+      "route": "/autohaus",
+      "header_title": "Willkommen zurück, Autohaus Müller",
+      "sections": [
+        "Welcome Hero Banner: Dark textured backdrop with dark luxury car visual, title 'Fahrzeuge schnell & profitabel vermarkten', subtitle, and red primary CTA 'Neues Fahrzeug einstellen'",
+        "KPI Metrics Row: 4 stat cards (Aktive Auktionen, Veraufte Fahrzeuge, Durchschnittspreis, Gebote gesamt) with +/- % delta badges and icon badges",
+        "Horizontal Stepper Pipeline: Active inspection & selling status (Annahme -> Aufbereitung -> In Auktion -> Verkauft -> Abholung)",
+        "My Vehicles Data Table: Tab filters (Alle, Entwürfe, In Auktion, Verkauft, Nicht Verkauft), search bar, column sorting, vehicle thumbnail, VIN, price, bid count, status pill, action menu",
+        "Active Auctions Quick Cards: Horizontal scrolling or grid of ending auctions with live countdown badges and quick-bid triggers",
+        "Right-Hand Analytics Rail: Monthly Sales Bar Chart (recharts), Sell-Through Rate Donut Chart, Recent Messages List, Important Documents Download Box"
+      ]
+    },
+    "page_2_auction_catalog": {
+      "route": "/haendler",
+      "header_title": "Auktionsübersicht & Katalog",
+      "sections": [
+        "Hero Banner & Live Metrics: Total live vehicles counter, reserve met count, total value",
+        "Multi-Filter Search Bar: Dropdowns for Marke/Modell, Baujahr, Kilometerstand bis, Kraftstoff, Getriebe, Standorte + prominent Red 'Auktionen Filtern' button",
+        "Category Pill Chips: Horizontal filter bar (Alle (128), PKW (84), Transporter (18), SUV (22), Elektro/Hybrid (12), Sofortkauf (8))",
+        "Grid Control Bar: Grid/List layout toggle, Sort dropdown (Endet bald, Neuester Eingang, Gebote), Results count",
+        "Vehicle Card Grid (3 columns on desktop): Responsive card with vehicle photo, status pill (LIVE/Endet bald), countdown badge with flame icon, favorite heart toggle, Title (e.g. '2021 BMW 320d Touring xDrive M Sport'), Meta icons (2021 • 74.500 km • Diesel • 190 PS), Current Bid / Next Bid, Red button 'Jetzt bieten'",
+        "Right Rail Sidebar: 'Meine aktiven Gebote' widget, 'Endet in unter 1 Stunde' list, 'Neu eingetroffen' list"
+      ]
+    },
+    "page_3_vehicle_detail": {
+      "route": "/haendler/auktionen/[id]",
+      "header_title": "BMW 320d xDrive Touring M Sport (2021)",
+      "sections": [
+        "Top Navigation Breadcrumb: '< Zurück zur Übersicht' + Next/Previous Vehicle fast switch buttons + Vehicle ID #AK-8842",
+        "Vehicle Image Gallery: Main featured viewer with zoom overlay, thumbnail carousel (Exterior, Interior, Engine, Tire Tread, Damage close-ups), PDF B2B Gutachten badge",
+        "Key Spec Highlights Grid: 8 icon chips (Leistung, Kraftstoff, Getriebe, Erstzulassung, Kilometer, HU/AU, Fahrzeughalter, Schadstoffklasse)",
+        "Tabbed Detail Panels: 'Übersicht', 'Ausstattung', 'Zustand & Schäden', 'Lackschichtmessung', 'Reifen & Bremsen', 'Diagnose & Fehler', 'Dokumente & B2B-Gutachten', 'Standort & Abholung'",
+        "Prominent Live Auction Panel (Fixed Right Side): Large Live Countdown HH:MM:SS box, Aktuelles Höchstgebot (€ 24.500), Mindestpreis status indicator bar ('Mindestpreis erreicht'), Big Red Button 'Jetzt € 24.600 bieten', Quick increment buttons (+€100, +€250, +€500), Custom Max-Bid Input ('Maximalgebot setzen'), Live Bidding History stream table with real-time websocket pulse effect, Seller info box (Anonymized until auction won)"
+      ]
+    }
+  },
+  "component_specifications": {
+    "buttons": {
+      "primary": "bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-[0.98]",
+      "secondary": "bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-2.5 px-4 rounded-lg transition-colors border border-slate-200",
+      "outline_red": "border-2 border-red-600 text-red-600 hover:bg-red-50 font-semibold py-2 px-4 rounded-lg transition-colors"
+    },
+    "cards": {
+      "default": "bg-white border border-slate-200 rounded-xl shadow-xs hover:shadow-sm transition-shadow p-5"
+    },
+    "data_tables": {
+      "wrapper": "bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs",
+      "header": "bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider px-4 py-3 text-left",
+      "row": "border-b border-slate-100 hover:bg-slate-50/80 transition-colors text-sm text-slate-700"
+    }
+  },
+  "image_urls": {
+    "hero_dark_bg": "https://images.unsplash.com/photo-1645400379459-f6fd3d963fd4?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "bmw_3series_blue": "https://images.unsplash.com/photo-1652454449842-1b88e4cd3333?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "porsche_dark": "https://images.unsplash.com/photo-1653407497540-26207a2408d7?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "dealership_lot": "https://images.unsplash.com/photo-1656685299543-251a83a0411d?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "car_interior": "https://images.unsplash.com/photo-1652967786818-b25edb1d5298?crop=entropy&cs=srgb&fm=jpg&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Ensure all buttons, form inputs, links, status badges, data table rows, and bidding controls include explicit `data-testid` attributes (e.g. data-testid='place-bid-button', data-testid='search-input', data-testid='vehicle-card-1').",
+    "Keep the left dark sidebar visible across all authenticated routes with '#0B0F17' background and red '#DC2626' active highlights.",
+    "Use German language terminology across the entire UI ('Jetzt bieten', 'Sofortkauf', 'Endet bald', 'Mindestpreis erreicht', 'Händler', 'Autohaus').",
+    "Maintain high density, clean data presentation, crisp borders, and zero transparent overlays on popups/dropdowns."
+  ]
+}

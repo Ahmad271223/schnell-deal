@@ -56,7 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type={type}
       disabled={disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all active:scale-[0.99] disabled:cursor-not-allowed',
         size === 'sm' && 'h-8 px-3 text-sm',
         size === 'md' && 'h-10 px-4 text-sm',
         size === 'lg' && 'h-12 px-5 text-base',
@@ -237,7 +237,7 @@ export function ErrorAlert({ error, className }: { error: unknown; className?: s
 // ---------------------------------------------------------------- Layout
 export function Card({ title, actions, children, className, padded = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={clsx('rounded-lg border border-slate-200 bg-white shadow-sm', className)}>
+    <section className={clsx('rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
       {(title || actions) && (
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
@@ -268,7 +268,7 @@ export function PageHeader({ title, subtitle, actions, back }: { title: ReactNod
 
 export function KpiCard({ label, value, hint, icon, emphasis }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; emphasis?: boolean }) {
   return (
-    <div className={clsx('rounded-lg border bg-white p-4 shadow-sm', emphasis ? 'border-brand-200' : 'border-slate-200')}>
+    <div className={clsx('rounded-xl border bg-white p-4 shadow-sm', emphasis ? 'border-brand-200' : 'border-slate-200')}>
       <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-500">
         <span>{label}</span>
         {icon}

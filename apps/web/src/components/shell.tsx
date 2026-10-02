@@ -33,14 +33,10 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  Star,
   Store,
   Timer,
   Truck,
-  UserRound,
   Users,
-  Wifi,
-  WifiOff,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -83,7 +79,7 @@ const NAV: Record<Area, NavItem[]> = {
     { href: '/admin/einstellungen', label: 'Einstellungen', icon: Settings },
   ],
   autohaus: [
-    { href: '/autohaus', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+    { href: '/autohaus', label: 'Startseite', icon: LayoutDashboard, exact: true },
     { href: '/autohaus/melden', label: 'Inzahlungnahmen melden', icon: Camera },
     { href: '/autohaus/termine', label: 'Termine', icon: CalendarDays },
     { href: '/autohaus/fahrzeuge', label: 'Meine Fahrzeuge', icon: Car },
@@ -91,7 +87,7 @@ const NAV: Record<Area, NavItem[]> = {
     { href: '/autohaus/verkauft', label: 'Verkauft', icon: Handshake },
     { href: '/autohaus/nicht-verkauft', label: 'Nicht verkauft', icon: Archive },
     { href: '/autohaus/dokumente', label: 'Dokumente', icon: FileText },
-    { href: '/autohaus/statistiken', label: 'Statistiken', icon: BarChart3 },
+    { href: '/autohaus/statistiken', label: 'Berichte', icon: BarChart3 },
     { href: '/autohaus/mitarbeiter', label: 'Mitarbeiter', icon: Users },
     { href: '/autohaus/firma', label: 'Firmendaten', icon: Building2 },
   ],
@@ -99,7 +95,7 @@ const NAV: Record<Area, NavItem[]> = {
     { href: '/haendler', label: 'Auktionen', icon: Gavel, exact: true },
     { href: '/haendler/endet-bald', label: 'Endet bald', icon: Timer },
     { href: '/haendler/neu', label: 'Neu eingestellt', icon: Package },
-    { href: '/haendler/favoriten', label: 'Favoriten', icon: Star },
+    { href: '/haendler/favoriten', label: 'Favoriten', icon: Heart },
     { href: '/haendler/gebote', label: 'Meine Gebote', icon: History },
     { href: '/haendler/gewonnen', label: 'Gewonnen', icon: CircleCheck },
     { href: '/haendler/kaeufe', label: 'Käufe', icon: Handshake },
@@ -120,6 +116,13 @@ const AREA_TITLE: Record<Area, string> = {
   admin: 'Plattform-Administration',
   autohaus: 'Autohaus',
   haendler: 'Händlerportal',
+  aussendienst: 'Außendienst',
+};
+
+const AREA_ROLE: Record<Area, string> = {
+  admin: 'Administration',
+  autohaus: 'Autohaus',
+  haendler: 'Händler',
   aussendienst: 'Außendienst',
 };
 
@@ -155,95 +158,89 @@ export function AreaShell({ area, children }: { area: Area; children: ReactNode 
       <Spinner />
     );
   }
-  // Händlerbereich: Marktplatz-Layout mit dunkler Kopfleiste (Vorlage des Auftraggebers), übrige Bereiche mit Seitenleiste.
-  const Layout = area === 'haendler' ? DealerShellLayout : ShellLayout;
   return (
-    <Layout area={area} me={me.data}>
+    <ShellLayout area={area} me={me.data}>
       {children}
       <PendingLegalDialog me={me.data} />
-    </Layout>
+    </ShellLayout>
   );
 }
+
+// ---------------------------------------------------------------- Einheitliches Layout: dunkle Seitenleiste + helle Kopfzeile
 
 function ShellLayout({ area, me, children }: { area: Area; me: Me; children: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const items = NAV[area];
   useEffect(() => setOpen(false), [pathname]);
-  const mobileFirst = area === 'aussendienst';
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar Desktop */}
-      <aside className={clsx('hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white', mobileFirst ? 'lg:flex' : 'md:flex')}>
-        <Brand area={area} />
-        <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Hauptnavigation">
-          {items.map((item) => (
-            <NavLink key={item.href} item={item} active={isActive(pathname, item)} />
-          ))}
-        </nav>
-        <div className="border-t border-slate-200 p-3 text-xs text-slate-500">{me.company?.name ?? AREA_TITLE[area]}</div>
+    <div className="min-h-screen bg-shell">
+      {/* Desktop-Seitenleiste (fest) */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800/80 bg-sidebar lg:flex" data-testid="sidebar">
+        <SidebarContent area={area} me={me} pathname={pathname} />
       </aside>
 
-      {/* Drawer Mobil */}
+      {/* Mobiler Drawer */}
       {open && (
-        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-white shadow-xl">
-            <div className="flex items-center justify-between pr-2">
-              <Brand area={area} />
-              <button className="rounded p-2 text-slate-600" onClick={() => setOpen(false)} aria-label="Menü schließen">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="flex-1 overflow-y-auto px-2 py-3">
-              {items.map((item) => (
-                <NavLink key={item.href} item={item} active={isActive(pathname, item)} />
-              ))}
-            </nav>
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 flex w-72 flex-col bg-sidebar shadow-2xl">
+            <SidebarContent area={area} me={me} pathname={pathname} onClose={() => setOpen(false)} />
           </aside>
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-5">
-          <button className={clsx('rounded p-2 text-slate-700', mobileFirst ? 'lg:hidden' : 'md:hidden')} onClick={() => setOpen(true)} aria-label="Menü öffnen">
-            <Menu className="h-5 w-5" />
-          </button>
-          <div className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">
-            {AREA_TITLE[area]}
-            {me.company && <span className="hidden text-slate-400 sm:inline"> · {me.company.name}</span>}
-          </div>
-          <ConnectionIndicator />
-          <NotificationBell me={me} />
-          <UserMenu me={me} />
-        </header>
-        <main className={clsx('flex-1 p-3 sm:p-6', mobileFirst && 'pb-24 lg:pb-6')}>{children}</main>
-        {mobileFirst && (
-          <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white lg:hidden" aria-label="Schnellnavigation">
-            {items.map((item) => {
-              const active = isActive(pathname, item);
-              return (
-                <Link key={item.href} href={item.href} className={clsx('flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium', active ? 'text-brand-700' : 'text-slate-500')} aria-current={active ? 'page' : undefined}>
-                  <item.icon className="h-5 w-5" aria-hidden />
-                  <span className="truncate px-1">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-        )}
+      <div className="flex min-h-screen flex-col lg:pl-64">
+        <Topbar area={area} me={me} onMenu={() => setOpen(true)} />
+        <main className="flex-1 px-4 py-5 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   );
 }
 
-function Brand({ area }: { area: Area }) {
+function SidebarContent({ area, me, pathname, onClose }: { area: Area; me: Me; pathname: string; onClose?: () => void }) {
+  const items = NAV[area];
   return (
-    <Link href={`/${area}`} className="flex h-14 items-center gap-2 px-4">
-      <span className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-700 text-sm font-bold text-white">SD</span>
-      <span className="leading-tight">
-        <span className="block text-sm font-semibold text-slate-900">Schnell-Deal</span>
-        <span className="block text-[11px] text-slate-500">{AREA_TITLE[area]}</span>
+    <>
+      <div className="flex h-16 items-center justify-between border-b border-slate-800/80 px-5">
+        <Logo href={`/${area}`} />
+        {onClose && (
+          <button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={onClose} aria-label="Menü schließen">
+            <X className="h-5 w-5" />
+          </button>
+        )}
+      </div>
+      <nav className="scroll-slim flex-1 overflow-y-auto px-3 py-4" aria-label="Hauptnavigation" data-testid="sidebar-nav">
+        {items.map((item) => (
+          <NavLink key={item.href} item={item} active={isActive(pathname, item)} />
+        ))}
+      </nav>
+      <div className="border-t border-slate-800/80 p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-xs font-bold text-white">
+            {me.user.firstName.charAt(0)}
+            {me.user.lastName.charAt(0)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">{me.company?.name ?? AREA_TITLE[area]}</p>
+            <p className="truncate text-xs text-slate-400">{AREA_ROLE[area]}</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Rotes, angewinkeltes Logo-Emblem + Wortmarke „SCHNELL DEAL“. */
+function Logo({ href }: { href: string }) {
+  return (
+    <Link href={href} className="flex items-center gap-2.5" aria-label="Schnell-Deal – Startseite" data-testid="brand-logo">
+      <span className="flex h-9 w-10 -skew-x-[14deg] items-center justify-center rounded-[5px] bg-brand-600 shadow-lg shadow-brand-900/40" aria-hidden>
+        <Gavel className="h-5 w-5 skew-x-[14deg] text-white" />
+      </span>
+      <span className="font-display text-[17px] font-extrabold uppercase leading-none tracking-wide">
+        <span className="text-white">Schnell</span>
+        <span className="text-brand-500"> Deal</span>
       </span>
     </Link>
   );
@@ -254,26 +251,83 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       href={item.href}
       aria-current={active ? 'page' : undefined}
+      data-testid={`nav-${item.href}`}
       className={clsx(
-        'mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium',
-        active ? 'bg-brand-50 text-brand-800' : 'text-slate-700 hover:bg-slate-100',
+        'mb-1 flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm transition-colors',
+        active
+          ? 'bg-brand-600 font-semibold text-white shadow-md shadow-brand-900/30'
+          : 'font-medium text-slate-400 hover:bg-slate-800/70 hover:text-white',
       )}
     >
-      <item.icon className="h-4 w-4 shrink-0" aria-hidden />
-      {item.label}
+      <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+      <span className="truncate">{item.label}</span>
     </Link>
   );
 }
 
-function ConnectionIndicator() {
+// ---------------------------------------------------------------- Kopfzeile
+
+function Topbar({ area, me, onMenu }: { area: Area; me: Me; onMenu: () => void }) {
+  const router = useRouter();
+  const [q, setQ] = useState('');
+  const searchTarget = area === 'haendler' ? '/haendler' : area === 'autohaus' ? '/autohaus/fahrzeuge' : area === 'admin' ? '/admin/fahrzeuge' : '/aussendienst';
+  return (
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 sm:px-6" data-testid="topbar">
+      <button className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={onMenu} aria-label="Menü öffnen">
+        <Menu className="h-5 w-5" />
+      </button>
+      <form
+        role="search"
+        className="hidden min-w-0 max-w-md flex-1 md:block"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const term = q.trim();
+          router.push(term ? `${searchTarget}?q=${encodeURIComponent(term)}` : searchTarget);
+        }}
+      >
+        <label className="relative block">
+          <span className="sr-only">Fahrzeuge suchen</span>
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Fahrzeuge, Marke, Modell …"
+            data-testid="global-search"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/15"
+          />
+        </label>
+      </form>
+
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        <LiveIndicator />
+        {area === 'haendler' && (
+          <Link href="/haendler/favoriten" className="relative hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100 sm:inline-flex" aria-label="Favoriten" data-testid="topbar-favorites">
+            <Heart className="h-5 w-5" aria-hidden />
+          </Link>
+        )}
+        <NotificationBell me={me} />
+        <LanguageMenu />
+        <UserMenu area={area} me={me} />
+      </div>
+    </header>
+  );
+}
+
+/** Live-Status: grüner Puls wenn verbunden, Hinweis bei Verbindungsproblemen. */
+function LiveIndicator() {
   const status = useRealtimeStatus();
   const online = status === 'online';
   return (
     <span
-      className={clsx('hidden items-center gap-1 rounded-full px-2 py-0.5 text-xs sm:inline-flex', online ? 'text-emerald-700' : 'text-amber-700')}
+      className={clsx(
+        'hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold sm:inline-flex',
+        online ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700',
+      )}
       title={online ? 'Live-Verbindung aktiv' : 'Live-Verbindung wird hergestellt'}
+      data-testid="live-indicator"
     >
-      {online ? <Wifi className="h-3.5 w-3.5" aria-hidden /> : <WifiOff className="h-3.5 w-3.5" aria-hidden />}
+      <span className={clsx('h-2 w-2 rounded-full', online ? 'bg-emerald-500 live-dot' : 'bg-amber-500')} aria-hidden />
       {online ? 'Live' : status === 'connecting' ? 'Verbinde …' : 'Offline'}
     </span>
   );
@@ -289,9 +343,11 @@ interface NotificationItem {
   createdAt: string;
 }
 
-function NotificationBell({ me, dark }: { me: Me; dark?: boolean }) {
+function NotificationBell({ me }: { me: Me }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(ref, open, () => setOpen(false));
   const q = useQuery({ queryKey: ['notifications'], queryFn: () => api<{ items: NotificationItem[]; unreadCount: number }>('/notifications'), refetchInterval: 60_000 });
   useChannel(`user:${me.user.id}`, (e) => {
     if (e.event === 'notification' || e.event === 'resync') void qc.invalidateQueries({ queryKey: ['notifications'] });
@@ -302,17 +358,27 @@ function NotificationBell({ me, dark }: { me: Me; dark?: boolean }) {
   };
   const unread = q.data?.unreadCount ?? 0;
   return (
-    <div className="relative">
-      <button className={clsx('relative rounded-full p-2', dark ? 'text-white hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100')} onClick={() => setOpen((v) => !v)} aria-label={`Benachrichtigungen (${unread} ungelesen)`} aria-expanded={open}>
+    <div className="relative" ref={ref}>
+      <button
+        className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={`Benachrichtigungen (${unread} ungelesen)`}
+        aria-expanded={open}
+        data-testid="notification-bell"
+      >
         <Bell className="h-5 w-5" />
-        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-semibold text-white">{unread > 99 ? '99+' : unread}</span>}
+        {unread > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-brand-600 px-1 text-center text-[11px] font-bold leading-[18px] text-white">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-[min(92vw,380px)] rounded-lg border border-slate-200 bg-white shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+        <div className="absolute right-0 z-40 mt-2 w-[min(92vw,380px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
             <span className="text-sm font-semibold">Benachrichtigungen</span>
             {unread > 0 && (
-              <button className="text-xs text-brand-700 hover:underline" onClick={markAll}>
+              <button className="text-xs font-medium text-brand-700 hover:underline" onClick={markAll}>
                 Alle als gelesen markieren
               </button>
             )}
@@ -320,7 +386,7 @@ function NotificationBell({ me, dark }: { me: Me; dark?: boolean }) {
           <ul className="max-h-96 overflow-y-auto">
             {(q.data?.items ?? []).length === 0 && <li className="p-4 text-sm text-slate-500">Keine Benachrichtigungen.</li>}
             {(q.data?.items ?? []).map((n) => (
-              <li key={n.id} className={clsx('border-b border-slate-100 px-3 py-2', !n.readAt && 'bg-brand-50/50')}>
+              <li key={n.id} className={clsx('border-b border-slate-100 px-4 py-2.5', !n.readAt && 'bg-brand-50/50')}>
                 {n.link ? (
                   <Link href={n.link} onClick={() => setOpen(false)} className="block">
                     <NotificationText n={n} />
@@ -350,36 +416,98 @@ function NotificationText({ n }: { n: NotificationItem }) {
   );
 }
 
-function UserMenu({ me }: { me: Me }) {
+function GermanFlag() {
+  return (
+    <span className="flex h-3.5 w-[22px] flex-col overflow-hidden rounded-[2px] ring-1 ring-slate-200" aria-hidden>
+      <span className="flex-1 bg-black" />
+      <span className="flex-1 bg-[#dd0000]" />
+      <span className="flex-1 bg-[#ffce00]" />
+    </span>
+  );
+}
+
+/** Oberflächensprache. Die Plattform ist derzeit ausschließlich deutschsprachig. */
+function LanguageMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(ref, open, () => setOpen(false));
+  return (
+    <div className="relative hidden sm:block" ref={ref}>
+      <button className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-slate-600 hover:bg-slate-100" onClick={() => setOpen((v) => !v)} aria-label="Sprache: Deutsch" aria-expanded={open} aria-haspopup="menu">
+        <GermanFlag />
+        <ChevronDown className="h-4 w-4" aria-hidden />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-40 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1 text-slate-800 shadow-xl">
+          <button role="menuitemradio" aria-checked="true" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => setOpen(false)}>
+            <GermanFlag /> Deutsch
+            <Check className="ml-auto h-4 w-4 text-emerald-600" aria-hidden />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMenu({ area, me }: { area: Area; me: Me }) {
   const logout = useLogout();
   const [open, setOpen] = useState(false);
   const [pw, setPw] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(ref, open, () => setOpen(false));
+  const name = me.company?.name ?? `${me.user.firstName} ${me.user.lastName}`;
   return (
-    <div className="relative">
-      <button className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-sm font-semibold text-white" onClick={() => setOpen((v) => !v)} aria-label="Benutzermenü" aria-expanded={open}>
-        {me.user.firstName.charAt(0)}
-        {me.user.lastName.charAt(0)}
+    <div className="relative" ref={ref}>
+      <button className="flex items-center gap-2.5 rounded-lg py-1 pl-1.5 pr-1 hover:bg-slate-100" onClick={() => setOpen((v) => !v)} aria-label="Benutzermenü" aria-expanded={open} aria-haspopup="menu" data-testid="user-menu">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar text-xs font-bold text-white" aria-hidden>
+          {me.user.firstName.charAt(0)}
+          {me.user.lastName.charAt(0)}
+        </span>
+        <span className="hidden text-left leading-tight lg:block">
+          <span className="block max-w-[12rem] truncate text-sm font-semibold text-slate-900">{name}</span>
+          <span className="block text-xs text-slate-500">{AREA_ROLE[area]}</span>
+        </span>
+        <ChevronDown className="hidden h-4 w-4 text-slate-400 lg:block" aria-hidden />
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
-          <div className="px-2 py-1.5">
-            <p className="text-sm font-medium">
+        <div role="menu" className="absolute right-0 z-40 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-2 text-slate-800 shadow-xl">
+          <div className="border-b border-slate-100 px-2 pb-2">
+            <p className="text-sm font-semibold">
               {me.user.firstName} {me.user.lastName}
             </p>
             <p className="truncate text-xs text-slate-500">{me.user.email}</p>
           </div>
-          <button className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => (setPw(true), setOpen(false))}>
-            Passwort ändern
-          </button>
-          <PushToggle />
-          <button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-700 hover:bg-red-50" onClick={logout}>
-            <LogOut className="h-4 w-4" /> Abmelden
-          </button>
+          <div className="py-1">
+            <button role="menuitem" className="w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => (setPw(true), setOpen(false))}>
+              Passwort ändern
+            </button>
+            <PushToggle />
+            <button role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-brand-700 hover:bg-brand-50" onClick={logout} data-testid="logout-button">
+              <LogOut className="h-4 w-4" /> Abmelden
+            </button>
+          </div>
         </div>
       )}
       <ChangePasswordDialog open={pw} onClose={() => setPw(false)} />
     </div>
   );
+}
+
+/** Schließt ein Menü bei Klick außerhalb oder Escape. */
+function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [ref, open, close]);
 }
 
 /** Neue Rechtstext-Versionen müssen akzeptiert werden, bevor die Plattform weiter genutzt wird (Spec §60). */
@@ -457,200 +585,8 @@ function PushToggle() {
     }
   };
   return (
-    <button className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={enable} disabled={state === 'done'}>
+    <button className="w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={enable} disabled={state === 'done'}>
       {state === 'done' ? 'Push-Benachrichtigungen aktiv' : state === 'error' ? 'Push nicht möglich (Berechtigung?)' : 'Push-Benachrichtigungen aktivieren'}
     </button>
-  );
-}
-
-// ---------------------------------------------------------------- Händlerbereich (Marktplatz-Layout nach Vorlage)
-
-const DEALER_MENU: { title: string; items: NavItem[] }[] = [
-  { title: 'Auktionen', items: NAV.haendler.slice(0, 4) },
-  { title: 'Mein Bereich', items: NAV.haendler.slice(4) },
-];
-
-/** Schließt ein Menü bei Klick außerhalb oder Escape. */
-function useDismiss(ref: React.RefObject<HTMLElement | null>, open: boolean, close: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [ref, open, close]);
-}
-
-/** Dunkle Kopfleiste: Logo, Fahrzeugsuche, Benachrichtigungen, Favoriten, Sprache und Benutzermenü mit allen Händlerseiten. */
-function DealerShellLayout({ me, children }: { area: Area; me: Me; children: ReactNode }) {
-  const router = useRouter();
-  const [q, setQ] = useState('');
-  return (
-    <div className="min-h-screen bg-[#f3f5f8]">
-      <header className="sticky top-0 z-30 bg-[#0f1b2d] text-white shadow-md">
-        <div className="mx-auto flex h-[54px] max-w-[1600px] items-center gap-3 px-3 sm:px-[18px]">
-          <Link href="/haendler" className="flex shrink-0 items-center gap-2.5" aria-label="Schnell-Deal – zur Auktionsübersicht">
-            <span className="flex h-8 w-11 -skew-x-12 items-center justify-center rounded-sm bg-red-600" aria-hidden>
-              <Gavel className="h-5 w-5 skew-x-12 text-white" />
-            </span>
-            <span className="text-lg font-extrabold uppercase tracking-wide sm:text-[22px]">Schnell-Deal</span>
-          </Link>
-          <form
-            role="search"
-            className="ml-4 hidden w-full max-w-[400px] md:block lg:ml-16"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const term = q.trim();
-              router.push(term ? `/haendler?q=${encodeURIComponent(term)}` : '/haendler');
-            }}
-          >
-            <label className="relative block">
-              <span className="sr-only">Fahrzeuge suchen</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" aria-hidden />
-              <input
-                type="search"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Fahrzeuge, Marke, Modell, ..."
-                className="h-[34px] w-full rounded-md border border-white/10 bg-[#2a3445] pl-9 pr-3 text-sm text-white placeholder:text-slate-300 focus:border-white/30 focus:outline-none"
-              />
-            </label>
-          </form>
-          <div className="ml-auto flex items-center gap-1 sm:gap-2">
-            <Link href="/haendler" className="rounded-full p-2 hover:bg-white/10 md:hidden" aria-label="Fahrzeuge suchen">
-              <Search className="h-5 w-5" aria-hidden />
-            </Link>
-            <OfflineHint />
-            <NotificationBell me={me} dark />
-            <Link href="/haendler/favoriten" className="hidden items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-white/10 sm:inline-flex">
-              <Heart className="h-5 w-5" aria-hidden /> Favoriten
-            </Link>
-            <LanguageMenu />
-            <DealerUserMenu me={me} />
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1600px] px-3 py-3 sm:px-[18px]">{children}</main>
-    </div>
-  );
-}
-
-/** Live-Verbindung: nur bei Problemen sichtbar (kurze Verbindungsaufbauten erzeugen keinen Hinweis). */
-function OfflineHint() {
-  const status = useRealtimeStatus();
-  const [delayed, setDelayed] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setDelayed(status !== 'online'), status === 'online' ? 0 : 1500);
-    return () => clearTimeout(t);
-  }, [status]);
-  if (status === 'online' || !delayed) return null;
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 px-2 py-0.5 text-xs text-amber-100" title="Live-Verbindung wird hergestellt">
-      <WifiOff className="h-3.5 w-3.5" aria-hidden />
-      {status === 'connecting' ? 'Verbinde …' : 'Offline'}
-    </span>
-  );
-}
-
-function GermanFlag() {
-  return (
-    <span className="flex h-3.5 w-[22px] flex-col overflow-hidden rounded-[2px]" aria-hidden>
-      <span className="flex-1 bg-black" />
-      <span className="flex-1 bg-[#dd0000]" />
-      <span className="flex-1 bg-[#ffce00]" />
-    </span>
-  );
-}
-
-/** Oberflächensprache. Die Plattform ist derzeit ausschließlich deutschsprachig. */
-function LanguageMenu() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, open, () => setOpen(false));
-  return (
-    <div className="relative hidden sm:block" ref={ref}>
-      <button className="flex items-center gap-1.5 rounded-md px-2 py-2 hover:bg-white/10" onClick={() => setOpen((v) => !v)} aria-label="Sprache: Deutsch" aria-expanded={open} aria-haspopup="menu">
-        <GermanFlag />
-        <ChevronDown className="h-4 w-4" aria-hidden />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 z-40 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-1 text-slate-800 shadow-xl">
-          <button role="menuitemradio" aria-checked="true" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => setOpen(false)}>
-            <GermanFlag /> Deutsch
-            <Check className="ml-auto h-4 w-4 text-emerald-600" aria-hidden />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DealerUserMenu({ me }: { me: Me }) {
-  const logout = useLogout();
-  const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-  const [pw, setPw] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, open, () => setOpen(false));
-  const name = me.company?.name ?? `${me.user.firstName} ${me.user.lastName}`;
-  return (
-    <div className="relative" ref={ref}>
-      <button className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/10" onClick={() => setOpen((v) => !v)} aria-label="Benutzermenü" aria-expanded={open} aria-haspopup="menu">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-400/40" aria-hidden>
-          <UserRound className="h-5 w-5 text-white" />
-        </span>
-        <span className="hidden text-left leading-tight lg:block">
-          <span className="block max-w-[12rem] truncate text-sm font-semibold">{name}</span>
-          <span className="block text-xs text-slate-300">Händler</span>
-        </span>
-        <ChevronDown className="hidden h-4 w-4 lg:block" aria-hidden />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 z-40 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-2 text-slate-800 shadow-xl">
-          <div className="border-b border-slate-100 px-2 pb-2">
-            <p className="text-sm font-semibold">
-              {me.user.firstName} {me.user.lastName}
-            </p>
-            <p className="truncate text-xs text-slate-500">{me.user.email}</p>
-          </div>
-          {DEALER_MENU.map((group) => (
-            <div key={group.title} className="border-b border-slate-100 py-1">
-              <p className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{group.title}</p>
-              {group.items.map((item) => {
-                const active = isActive(pathname, item);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="menuitem"
-                    onClick={() => setOpen(false)}
-                    aria-current={active ? 'page' : undefined}
-                    className={clsx('flex items-center gap-2.5 rounded px-2 py-1.5 text-sm', active ? 'bg-red-50 font-medium text-red-700' : 'hover:bg-slate-100')}
-                  >
-                    <item.icon className="h-4 w-4" aria-hidden /> {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-          <div className="pt-1">
-            <button role="menuitem" className="w-full rounded px-2 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => (setPw(true), setOpen(false))}>
-              Passwort ändern
-            </button>
-            <PushToggle />
-            <button role="menuitem" className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-red-700 hover:bg-red-50" onClick={logout}>
-              <LogOut className="h-4 w-4" /> Abmelden
-            </button>
-          </div>
-        </div>
-      )}
-      <ChangePasswordDialog open={pw} onClose={() => setPw(false)} />
-    </div>
   );
 }
