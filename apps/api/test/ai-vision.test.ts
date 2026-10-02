@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-// drainJobs() arbeitet die gemeinsame Warteschlange ab, in der parallel laufende Testdateien Foto- und PDF-Jobs einreihen.
+// drainJobs() arbeitet die gesamte Warteschlange ab, auch die von zuvor gelaufenen Testdateien hinterlassenen
+// Foto-, PDF- und E-Mail-Jobs (die Testdatenbank wird je Lauf nur einmal zurückgesetzt). Je nach Reihenfolge dauert das länger.
 vi.setConfig({ testTimeout: 120_000 });
 import { config } from '../src/config';
 import { db, schema } from '../src/core/db/client';

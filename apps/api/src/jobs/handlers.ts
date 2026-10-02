@@ -9,60 +9,78 @@ import { notifyAdmins } from '../modules/notifications/service';
 import { processPhotoJob } from '../modules/vehicles/photo-processing';
 import { generateDealDocumentsJob } from '../modules/deals/pdf';
 
+type Mailer = (msg: { to: string; subject: string; text: string }) => Promise<void>;
+
 /**
- * E-Mail höchstens einmal: Der Zwischenstand „Versand begonnen“ wird vor dem SMTP-Aufruf gespeichert. Stürzt der
- * Worker danach ab, sendet die Wiederholung nicht erneut (Zustellung ungewiss, Status UNCERTAIN), statt Händlern
- * dieselbe Zuschlags- oder Zahlungsnachricht zweimal zu schicken.
+ * E-Mail ohne Doppelversand: Vor dem SMTP-Aufruf wird „Versand läuft“ gespeichert. Scheitert der Aufruf sauber
+ * (Verbindung, Anmeldung, Ablehnung), wird der Vermerk zurückgenommen und die Wiederholung sendet erneut. Bricht der
+ * Worker dagegen mitten im Versand ab, ist unklar, ob die Mail angenommen wurde: Dann sendet die Wiederholung nicht
+ * noch einmal (Status UNCERTAIN an der Benachrichtigung, Warnung im Protokoll), statt Händlern dieselbe Zuschlags- oder
+ * Zahlungsnachricht zweimal zu schicken. Die In-App-Benachrichtigung erreicht den Empfänger in jedem Fall.
  */
-const emailHandler: JobHandler = async (payload: { notificationId?: string; to: string; subject: string; text: string }, job) => {
-  if (job.checkpoint?.smtpStarted) {
-    console.warn(`[jobs] E-Mail-Job ${job.id}: vorheriger Versuch war bereits beim Versand – kein erneuter Versand, Zustellung ungewiss.`);
-    if (payload.notificationId) {
-      await db.update(schema.notifications).set({ emailStatus: 'UNCERTAIN' }).where(eq(schema.notifications.id, payload.notificationId));
+export function createEmailHandler(send: Mailer = sendMail): JobHandler {
+  return async (payload: { notificationId?: string; to: string; subject: string; text: string }, job) => {
+    if (job.checkpoint?.smtpStarted === true) {
+      console.warn(`[jobs] E-Mail-Job ${job.id}: vorheriger Versuch brach während des Versands ab – kein erneuter Versand, Zustellung ungewiss.`);
+      if (payload.notificationId) {
+        await db.update(schema.notifications).set({ emailStatus: 'UNCERTAIN' }).where(eq(schema.notifications.id, payload.notificationId));
+      }
+      return;
     }
-    return;
-  }
-  await job.saveCheckpoint({ smtpStarted: true });
-  await sendMail({ to: payload.to, subject: payload.subject, text: payload.text });
-  if (payload.notificationId) {
-    await db.update(schema.notifications).set({ emailStatus: 'SENT' }).where(eq(schema.notifications.id, payload.notificationId));
-  }
-};
+    await job.saveCheckpoint({ smtpStarted: true });
+    try {
+      await send({ to: payload.to, subject: payload.subject, text: payload.text });
+    } catch (err) {
+      await job.saveCheckpoint({ smtpStarted: false });
+      throw err;
+    }
+    if (payload.notificationId) {
+      await db.update(schema.notifications).set({ emailStatus: 'SENT' }).where(eq(schema.notifications.id, payload.notificationId));
+    }
+  };
+}
+
+type PushSender = (sub: { endpoint: string; keys: { p256dh: string; auth: string } }, body: string) => Promise<unknown>;
 
 let vapidReady = false;
-/** Push je Abonnement genau einmal: erfolgreich bediente Abonnements stehen im Zwischenstand und werden bei Wiederholung übersprungen. */
-const pushHandler: JobHandler = async (payload: { userId: string; title: string; body: string; link: string | null }, job) => {
-  if (!config.VAPID_PUBLIC_KEY || !config.VAPID_PRIVATE_KEY) return;
+function defaultPushSender(): PushSender | null {
+  if (!config.VAPID_PUBLIC_KEY || !config.VAPID_PRIVATE_KEY) return null;
   if (!vapidReady) {
     webpush.setVapidDetails(config.VAPID_SUBJECT, config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY);
     vapidReady = true;
   }
-  const sent = new Set<string>(Array.isArray(job.checkpoint?.sent) ? (job.checkpoint!.sent as string[]) : []);
-  const subs = await db.select().from(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.userId, payload.userId));
-  for (const s of subs) {
-    if (sent.has(s.id)) continue;
-    try {
-      await webpush.sendNotification(
-        { endpoint: s.endpoint, keys: s.keys as { p256dh: string; auth: string } },
-        JSON.stringify({ title: payload.title, body: payload.body, link: payload.link }),
-      );
-      sent.add(s.id);
-      await job.saveCheckpoint({ sent: [...sent] });
-    } catch (err) {
-      const status = (err as { statusCode?: number }).statusCode;
-      // Abgelaufene Subscriptions entfernen.
-      if (status === 404 || status === 410) {
-        await db.delete(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.id, s.id));
-      } else {
-        throw err;
+  return (sub, body) => webpush.sendNotification(sub, body);
+}
+
+/** Push je Abonnement genau einmal: erfolgreich bediente Abonnements stehen im Zwischenstand und werden bei Wiederholung übersprungen. */
+export function createPushHandler(getSender: () => PushSender | null = defaultPushSender): JobHandler {
+  return async (payload: { userId: string; title: string; body: string; link: string | null }, job) => {
+    const send = getSender();
+    if (!send) return;
+    const sent = new Set<string>(Array.isArray(job.checkpoint?.sent) ? (job.checkpoint!.sent as string[]) : []);
+    const subs = await db.select().from(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.userId, payload.userId));
+    for (const s of subs) {
+      if (sent.has(s.id)) continue;
+      try {
+        await send({ endpoint: s.endpoint, keys: s.keys as { p256dh: string; auth: string } }, JSON.stringify({ title: payload.title, body: payload.body, link: payload.link }));
+        sent.add(s.id);
+        await job.saveCheckpoint({ sent: [...sent] });
+      } catch (err) {
+        const status = (err as { statusCode?: number }).statusCode;
+        // Abgelaufene Subscriptions entfernen.
+        if (status === 404 || status === 410) {
+          await db.delete(schema.pushSubscriptions).where(eq(schema.pushSubscriptions.id, s.id));
+        } else {
+          throw err;
+        }
       }
     }
-  }
-};
+  };
+}
 
 export const jobHandlers: Partial<Record<JobType, JobHandler>> = {
-  'email.send': emailHandler,
-  'push.send': pushHandler,
+  'email.send': createEmailHandler(),
+  'push.send': createPushHandler(),
   'image.process': processPhotoJob,
   'pdf.deal': generateDealDocumentsJob,
 };

@@ -98,7 +98,9 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
     const u = getAuth(req);
     // Offline-fähig: der Client darf eine eigene UUID mitsenden → wiederholte Requests sind idempotent.
     const input = parse(z.object({ clientVehicleId: uuidSchema.optional() }), req.body ?? {});
-    return db.transaction(async (tx) => {
+    // Antwort erst nach dem Commit senden: Der Client (Offline-Warteschlange) schickt FIN und Fotos sofort hinterher;
+    // eine Antwort aus der offenen Transaktion heraus ließe diese Folgeanfragen auf ein noch unsichtbares Fahrzeug treffen (404).
+    const result = await db.transaction(async (tx) => {
       const [r] = await tx.select().from(schema.inspectionRequests).where(eq(schema.inspectionRequests.id, requestId)).for('update');
       if (!r) throw notFound('Aufnahmeauftrag');
       if (!isAdmin(u)) {
@@ -115,7 +117,7 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
         const [existing] = await tx.select().from(schema.vehicles).where(eq(schema.vehicles.id, input.clientVehicleId));
         if (existing) {
           if (existing.inspectionRequestId !== requestId) throw new AppError(409, 'ID_CONFLICT', 'Fahrzeug-ID bereits vergeben.');
-          return reply.status(200).send({ id: existing.id, internalNumber: existing.internalNumber, status: existing.status });
+          return { code: 200, body: { id: existing.id, internalNumber: existing.internalNumber, status: existing.status } };
         }
       }
       const [{ n }] = (await tx.execute<{ n: string }>(sql`select nextval('vehicle_number_seq')::text as n`)).rows as [{ n: string }];
@@ -142,8 +144,9 @@ export async function vehicleRoutes(app: FastifyInstance): Promise<void> {
         entityId: v!.id,
         newValue: { internalNumber: v!.internalNumber, inspectionRequestId: requestId },
       });
-      return reply.status(201).send({ id: v!.id, internalNumber: v!.internalNumber, status: v!.status });
+      return { code: 201, body: { id: v!.id, internalNumber: v!.internalNumber, status: v!.status } };
     });
+    return reply.status(result.code).send(result.body);
   });
 
   // ---------- Liste ----------
